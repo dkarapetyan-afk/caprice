@@ -38,7 +38,7 @@ jobs:
         run: bash scripts/package_release.sh "${RUNNER_TEMP}/caprice-dist"
 
       - name: Upload the package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: caprice-linux-x86_64
           path: |
