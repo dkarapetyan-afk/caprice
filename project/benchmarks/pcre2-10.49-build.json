@@ -1,0 +1,17 @@
+{
+  "version": "10.49",
+  "release_url": "https://github.com/PCRE2Project/pcre2/releases/tag/pcre2-10.49",
+  "source_url": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.bz2",
+  "source_sha256": "53c156e1ba416a20da8e65395daa132da0d80e76910424caca3fcdae7831d384",
+  "configure": [
+    "--enable-jit",
+    "--enable-shared",
+    "--disable-static",
+    "--disable-pcre2grep",
+    "--disable-pcre2-16",
+    "--disable-pcre2-32"
+  ],
+  "CFLAGS": "-O3 -DNDEBUG",
+  "compiler": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+  "tests": "make check: 4 PASS, 0 FAIL"
+}

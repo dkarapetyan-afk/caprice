@@ -1,0 +1,12 @@
+{
+  "raw_over_pe_geomean": 2.8915625267093614,
+  "raw_over_pe_min": 1.3036228399073566,
+  "raw_over_pe_max": 22.02153932977186,
+  "jit_over_pe_geomean": 1.0875149970249658,
+  "jit_over_pe_min": 1.0439503562234869,
+  "jit_over_pe_max": 1.1664479929737945,
+  "workloads": 11,
+  "validated_corpus_inputs": 2816,
+  "raw_matching_samples": 2025,
+  "raw_compile_samples": 1575
+}

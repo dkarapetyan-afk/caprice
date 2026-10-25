@@ -1,0 +1,117 @@
+; Caprice v0.1.0 residual native control-flow IR
+; pattern: (?<x>[a-z]{1,8}):${(upper (cap x))}(?{(le (len (cap x)) 8)})
+function u0:0(i64) -> i64 system_v {
+    sig0 = (i64, i64) -> i64 system_v
+    sig1 = (i64) -> i64 system_v
+    fn0 = u0:0 sig0
+    fn1 = u0:1 sig1
+
+block0(v0: i64):
+    jump block1
+
+block1:
+    v2 = iconst.i64 0
+    v3 = call fn0(v0, v2)  ; v2 = 0
+    v4 = icmp_imm eq v3, 2
+    brif v4, block12, block14
+
+block14:
+    v5 = icmp_imm.i64 eq v3, 0
+    brif v5, block2, block9
+
+block2:
+    v6 = iconst.i64 1
+    v7 = call fn0(v0, v6)  ; v6 = 1
+    v8 = icmp_imm eq v7, 2
+    brif v8, block12, block15
+
+block15:
+    v9 = icmp_imm.i64 eq v7, 0
+    brif v9, block3, block9
+
+block3:
+    v10 = iconst.i64 2
+    v11 = call fn0(v0, v10)  ; v10 = 2
+    v12 = icmp_imm eq v11, 2
+    brif v12, block12, block16
+
+block16:
+    v13 = icmp_imm.i64 eq v11, 0
+    brif v13, block4, block9
+
+block4:
+    v14 = iconst.i64 3
+    v15 = call fn0(v0, v14)  ; v14 = 3
+    v16 = icmp_imm eq v15, 2
+    brif v16, block12, block17
+
+block17:
+    v17 = icmp_imm.i64 eq v15, 0
+    brif v17, block5, block9
+
+block5:
+    v18 = iconst.i64 4
+    v19 = call fn0(v0, v18)  ; v18 = 4
+    v20 = icmp_imm eq v19, 2
+    brif v20, block12, block18
+
+block18:
+    v21 = icmp_imm.i64 eq v19, 0
+    brif v21, block6, block9
+
+block6:
+    v22 = iconst.i64 5
+    v23 = call fn0(v0, v22)  ; v22 = 5
+    v24 = icmp_imm eq v23, 2
+    brif v24, block12, block19
+
+block19:
+    v25 = icmp_imm.i64 eq v23, 0
+    brif v25, block7, block9
+
+block7:
+    v26 = iconst.i64 6
+    v27 = call fn0(v0, v26)  ; v26 = 6
+    v28 = icmp_imm eq v27, 2
+    brif v28, block12, block20
+
+block20:
+    v29 = icmp_imm.i64 eq v27, 0
+    brif v29, block8, block9
+
+block8:
+    v30 = iconst.i64 7
+    v31 = call fn0(v0, v30)  ; v30 = 7
+    v32 = icmp_imm eq v31, 2
+    brif v32, block12, block21
+
+block21:
+    v33 = icmp_imm.i64 eq v31, 0
+    brif v33, block10, block9
+
+block9:
+    v34 = call fn1(v0)
+    v35 = icmp_imm eq v34, -2
+    brif v35, block12, block13(v34)
+
+block13(v1: i64):
+    v36 = icmp_imm ugt v1, 0xffff_ffff
+    brif v36, block11, block22
+
+block22:
+    v37 = ireduce.i32 v1
+    br_table v37, block11, [block1, block2, block3, block4, block5, block6, block7, block8]
+
+block10:
+    v38 = iconst.i64 1
+    return v38  ; v38 = 1
+
+block11:
+    v39 = iconst.i64 0
+    return v39  ; v39 = 0
+
+block12:
+    v40 = iconst.i64 2
+    return v40  ; v40 = 2
+}
+

@@ -1,0 +1,1162 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "caprice"
+-version = "0.2.0"
++version = "0.3.0"
+ edition = "2021"
+ description = "Capture-aware partial evaluation and native byte-operation JIT performance experiment"
+ publish = false
+@@ -13,6 +13,9 @@
+ regex = "=1.12.2"
+ serde = { version = "=1.0.228", features = ["derive"] }
+ serde_json = "=1.0.145"
++
++[dev-dependencies]
++caprice_v02 = { package = "caprice", path = "baseline-v0.2.0" }
+ 
+ [profile.release]
+ debug = 1
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -48,6 +48,20 @@
+ name = "caprice"
+ version = "0.2.0"
+ dependencies = [
++ "cranelift-codegen",
++ "cranelift-frontend",
++ "cranelift-jit",
++ "cranelift-module",
++ "regex",
++ "serde",
++ "serde_json",
++]
++
++[[package]]
++name = "caprice"
++version = "0.3.0"
++dependencies = [
++ "caprice 0.2.0",
+  "cranelift-codegen",
+  "cranelift-frontend",
+  "cranelift-jit",
+--- a/src/allocations.rs
++++ b/src/allocations.rs
+@@ -34,13 +34,13 @@
+         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+     println!("workload,engine,inputs,allocations");
+     for w in corpus.as_array().unwrap() {
+-        let params = w["params"]
++        let params: caprice::expr::Params = w["params"]
+             .as_object()
+             .unwrap()
+             .iter()
+             .map(|(k, v)| (k.clone(), v.as_str().unwrap().as_bytes().to_vec()))
+             .collect();
+-        let e = Engine::new(w["pattern"].as_str().unwrap(), params, Mode::Jit).unwrap();
++        let e = Engine::new(w["pattern"].as_str().unwrap(), params.clone(), Mode::Jit).unwrap();
+         let inputs: Vec<_> = w["inputs"]
+             .as_array()
+             .unwrap()
+@@ -72,5 +72,24 @@
+                 count
+             );
+         }
++        let mut cache = caprice::cache::EngineCache::new(16);
++        cache
++            .get_or_compile(w["pattern"].as_str().unwrap(), &params, Mode::Jit)
++            .unwrap();
++        COUNT.store(0, Ordering::SeqCst);
++        for _ in &inputs {
++            black_box(
++                cache
++                    .get_or_compile(w["pattern"].as_str().unwrap(), &params, Mode::Jit)
++                    .unwrap(),
++            );
++        }
++        let count = COUNT.load(Ordering::SeqCst);
++        println!(
++            "{},cache-hit,{},{}",
++            w["id"].as_str().unwrap(),
++            inputs.len(),
++            count
++        );
+     }
+ }
+--- a/src/cache.rs
++++ b/src/cache.rs
+@@ -0,0 +1,74 @@
++//! Process-local bounded LRU reuse of immutable compiled engines.
++use crate::{expr::Params, Engine, Mode};
++use std::{collections::VecDeque, rc::Rc};
++
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub struct CacheStats {
++    pub hits: u64,
++    pub misses: u64,
++    pub compilations: u64,
++    pub evictions: u64,
++}
++struct Entry {
++    pattern: String,
++    engine: Rc<Engine>,
++}
++/// Entries are bounded; callers can keep evicted engines alive through Rc.
++/// The cache is local to one thread and includes static parameters and mode in
++/// its identity. A hit neither parses the pattern nor allocates a new key.
++pub struct EngineCache {
++    capacity: usize,
++    entries: VecDeque<Entry>,
++    stats: CacheStats,
++}
++impl EngineCache {
++    pub fn new(capacity: usize) -> Self {
++        Self {
++            capacity,
++            entries: VecDeque::new(),
++            stats: CacheStats::default(),
++        }
++    }
++    pub fn len(&self) -> usize {
++        self.entries.len()
++    }
++    pub fn is_empty(&self) -> bool {
++        self.entries.is_empty()
++    }
++    pub fn stats(&self) -> CacheStats {
++        self.stats
++    }
++    pub fn clear(&mut self) {
++        self.entries.clear();
++    }
++    pub fn get_or_compile(
++        &mut self,
++        pattern: &str,
++        params: &Params,
++        mode: Mode,
++    ) -> Result<Rc<Engine>, String> {
++        if let Some(index) = self.entries.iter().position(|e| {
++            e.pattern == pattern && e.engine.mode == mode && &e.engine.program().params == params
++        }) {
++            let entry = self.entries.remove(index).unwrap();
++            let engine = Rc::clone(&entry.engine);
++            self.entries.push_back(entry);
++            self.stats.hits = self.stats.hits.saturating_add(1);
++            return Ok(engine);
++        }
++        self.stats.misses = self.stats.misses.saturating_add(1);
++        let engine = Rc::new(Engine::new(pattern, params.clone(), mode)?);
++        self.stats.compilations = self.stats.compilations.saturating_add(1);
++        if self.capacity > 0 {
++            if self.entries.len() == self.capacity {
++                self.entries.pop_front();
++                self.stats.evictions = self.stats.evictions.saturating_add(1);
++            }
++            self.entries.push_back(Entry {
++                pattern: pattern.to_owned(),
++                engine: Rc::clone(&engine),
++            });
++        }
++        Ok(engine)
++    }
++}
+--- a/src/fast_expr.rs
++++ b/src/fast_expr.rs
+@@ -1,5 +1,5 @@
+ //! Conservative expression lowering. Unsupported forms retain the strict evaluator.
+-use crate::expr::{Captures, EvalError, Expr, Value};
++use crate::expr::{EvalError, Expr, Value};
+ 
+ #[derive(Clone, Copy, Debug)]
+ pub enum Transform {
+@@ -98,6 +98,28 @@
+     },
+ }
+ impl FastExpr {
++    pub(crate) fn emitted_capture(&self) -> Option<usize> {
++        if let Self::Emit { id, .. } = self {
++            Some(*id)
++        } else {
++            None
++        }
++    }
++    pub(crate) fn length_bounds(&self, capture: usize) -> Option<(usize, Option<usize>, usize)> {
++        if self.id() != capture {
++            return None;
++        }
++        match self {
++            Self::Equal { value, .. } => Some((value.len(), Some(value.len()), value.len())),
++            Self::Length { n, op, .. } => Some(match op.as_str() {
++                "le" => (0, Some(*n), 0),
++                "lt" if *n == 0 => (1, Some(0), 0),
++                "lt" => (0, Some(n - 1), 0),
++                _ => (*n, Some(*n), 0),
++            }),
++            _ => None,
++        }
++    }
+     fn id(&self) -> usize {
+         match self {
+             Self::Length { id, .. } | Self::Equal { id, .. } | Self::Emit { id, .. } => *id,
+@@ -161,14 +183,33 @@
+         None
+     }
+     /// Return a successful consumed-byte count (zero for a guard), or failure.
++    #[cfg(test)]
+     pub fn test(
+         &self,
+         input: &[u8],
+-        caps: &Captures,
++        caps: &crate::expr::Captures,
+         pos: usize,
+         limit: usize,
+     ) -> Result<Option<usize>, EvalError> {
+-        let (a, z) = caps[self.id()]
++        self.test_span(input, caps[self.id()], pos, limit)
++    }
++    pub(crate) fn test_slots(
++        &self,
++        input: &[u8],
++        caps: &[crate::CaptureSlot],
++        pos: usize,
++        limit: usize,
++    ) -> Result<Option<usize>, EvalError> {
++        self.test_span(input, caps[self.id()].span(), pos, limit)
++    }
++    fn test_span(
++        &self,
++        input: &[u8],
++        span: Option<(usize, usize)>,
++        pos: usize,
++        limit: usize,
++    ) -> Result<Option<usize>, EvalError> {
++        let (a, z) = span
+             .filter(|(a, z)| a <= z && *z <= input.len())
+             .ok_or(EvalError::Unset)?;
+         if z - a > limit {
+--- a/src/jit.rs
++++ b/src/jit.rs
+@@ -93,7 +93,12 @@
+                     Inst::Jump(n) | Inst::Split(n, _) => blocks[*n],
+                     _ => blocks.get(pc + 1).copied().unwrap_or(no),
+                 };
+-                if inline(&mut b, ptr, inst, next, fail, budget, &blocks) {
++                if !p.backtracking && inline_capture(&mut b, ptr, inst, next, budget) {
++                    continue;
++                }
++                if (!p.backtracking || !matches!(inst, Inst::CaptureRun(..)))
++                    && inline(&mut b, ptr, inst, next, fail, budget, &blocks)
++                {
+                     continue;
+                 }
+                 let primitive = match inst {
+@@ -183,10 +188,64 @@
+ const INPUT: i32 = std::mem::offset_of!(Runtime<'static>, input_ptr) as i32;
+ const STEPS: i32 = std::mem::offset_of!(Runtime<'static>, steps) as i32;
+ const LIMIT: i32 = std::mem::offset_of!(Runtime<'static>, step_limit) as i32;
++const CAPS: i32 = std::mem::offset_of!(Runtime<'static>, capture_ptr) as i32;
++fn inline_capture(
++    b: &mut FunctionBuilder,
++    ptr: Value,
++    inst: &Inst,
++    next: Block,
++    budget: Block,
++) -> bool {
++    let (id, end) = match inst {
++        Inst::SaveStart(id) => (*id, false),
++        Inst::SaveEnd(id) => (*id, true),
++        _ => return false,
++    };
++    charge(b, ptr, budget);
++    let pos = load(b, ptr, POS);
++    let base = load(b, ptr, CAPS);
++    let stride = std::mem::size_of::<crate::CaptureSlot>();
++    let at = (id * stride) as i32;
++    if end {
++        b.ins().store(
++            MemFlags::new(),
++            pos,
++            base,
++            at + std::mem::offset_of!(crate::CaptureSlot, end) as i32,
++        );
++    } else {
++        b.ins().store(
++            MemFlags::new(),
++            pos,
++            base,
++            at + std::mem::offset_of!(crate::CaptureSlot, start) as i32,
++        );
++        let open = b.ins().iconst(types::I64, -1);
++        b.ins().store(
++            MemFlags::new(),
++            open,
++            base,
++            at + std::mem::offset_of!(crate::CaptureSlot, end) as i32,
++        );
++    }
++    b.ins().jump(next, &[]);
++    true
++}
+ fn load(b: &mut FunctionBuilder, ptr: Value, offset: i32) -> Value {
+     b.ins().load(types::I64, MemFlags::new(), ptr, offset)
+ }
+ fn class_test(b: &mut FunctionBuilder, c: &crate::pattern::Class, byte: Value) -> Value {
++    // A negated small set is cheaper than several disjoint positive ranges.
++    if c.0.iter().map(|w| (!w).count_ones()).sum::<u32>() <= 4 {
++        let mut ok = b.ins().iconst(types::I8, 1);
++        for v in 0u16..256 {
++            if !c.has(v as u8) {
++                let different = b.ins().icmp_imm(IntCC::NotEqual, byte, v as i64);
++                ok = b.ins().band(ok, different);
++            }
++        }
++        return ok;
++    }
+     let mut ranges = vec![];
+     let mut i = 0u16;
+     while i < 256 {
+@@ -237,6 +296,7 @@
+             inst,
+             Inst::Class(_)
+                 | Inst::AtomicRun(..)
++                | Inst::CaptureRun(..)
+                 | Inst::Start
+                 | Inst::End
+                 | Inst::Accept
+@@ -328,7 +388,7 @@
+             b.ins().store(MemFlags::new(), end, ptr, POS);
+             b.ins().jump(next, &[]);
+         }
+-        Inst::AtomicRun(c, min, max) => {
++        Inst::AtomicRun(c, min, max) | Inst::CaptureRun(_, c, min, max) => {
+             let base = load(b, ptr, INPUT);
+             let remaining = b.ins().isub(len, pos);
+             let count = if let Some(max) = max {
+@@ -367,6 +427,22 @@
+                 .icmp_imm(IntCC::UnsignedGreaterThanOrEqual, size, *min as i64);
+             b.ins().brif(enough, commit, &[], fail, &[]);
+             b.switch_to_block(commit);
++            if let Inst::CaptureRun(id, ..) = inst {
++                let slots = load(b, ptr, CAPS);
++                let at = (*id * std::mem::size_of::<crate::CaptureSlot>()) as i32;
++                b.ins().store(
++                    MemFlags::new(),
++                    pos,
++                    slots,
++                    at + std::mem::offset_of!(crate::CaptureSlot, start) as i32,
++                );
++                b.ins().store(
++                    MemFlags::new(),
++                    end,
++                    slots,
++                    at + std::mem::offset_of!(crate::CaptureSlot, end) as i32,
++                );
++            }
+             b.ins().store(MemFlags::new(), end, ptr, POS);
+             b.ins().jump(next, &[]);
+         }
+--- a/src/length.rs
++++ b/src/length.rs
+@@ -0,0 +1,180 @@
++//! Conservative affine full-match lengths: |subject| = fixed + scale * |capture|.
++use crate::{
++    fast_expr::FastExpr,
++    pattern::{Ast, Class, Inst},
++};
++use std::collections::BTreeMap;
++
++#[derive(Clone, Copy, Debug)]
++struct Affine {
++    fixed: usize,
++    scale: usize,
++}
++impl Affine {
++    fn add(self, rhs: Self) -> Option<Self> {
++        Some(Self {
++            fixed: self.fixed.checked_add(rhs.fixed)?,
++            scale: self.scale.checked_add(rhs.scale)?,
++        })
++    }
++}
++#[derive(Clone, Copy, Debug)]
++pub struct GuardBounds {
++    min: usize,
++    max: Option<usize>,
++    constant_bytes: usize,
++}
++impl GuardBounds {
++    fn intersect(self, rhs: Self) -> Self {
++        Self {
++            min: self.min.max(rhs.min),
++            max: match (self.max, rhs.max) {
++                (Some(a), Some(b)) => Some(a.min(b)),
++                (a, b) => a.or(b),
++            },
++            constant_bytes: self.constant_bytes.max(rhs.constant_bytes),
++        }
++    }
++}
++#[derive(Clone, Debug)]
++pub struct SizedRun {
++    pub class: Class,
++    pub min: usize,
++    pub max: Option<usize>,
++    fixed: usize,
++    scale: usize,
++    guard: Option<GuardBounds>,
++}
++impl SizedRun {
++    pub fn count(&self, subject_len: usize, expression_limit: usize) -> Option<usize> {
++        let remaining = subject_len.checked_sub(self.fixed)?;
++        if !remaining.is_multiple_of(self.scale) {
++            return None;
++        }
++        let count = remaining / self.scale;
++        if count < self.min || self.max.is_some_and(|max| count > max) {
++            return None;
++        }
++        if let Some(g) = self.guard {
++            // Do not turn a mandatory expression-limit error into rejection.
++            // At a smaller limit the original guard still executes downstream.
++            if expression_limit >= count.max(g.constant_bytes)
++                && (count < g.min || g.max.is_some_and(|m| count > m))
++            {
++                return None;
++            }
++        }
++        Some(count)
++    }
++}
++#[derive(Default)]
++struct Analysis {
++    captures: BTreeMap<usize, Affine>,
++    variable: Option<usize>,
++    guard: Option<GuardBounds>,
++}
++fn single(mut a: &Ast) -> &Ast {
++    while let Ast::Seq(v) = a {
++        if v.len() != 1 {
++            break;
++        }
++        a = &v[0];
++    }
++    a
++}
++impl Analysis {
++    fn visit(&mut self, a: &Ast) -> Option<Affine> {
++        let constant = |n| Some(Affine { fixed: n, scale: 0 });
++        match a {
++            Ast::Empty | Ast::Start | Ast::End => constant(0),
++            Ast::Lit(s) => constant(s.len()),
++            Ast::Class(_) => constant(1),
++            Ast::Seq(v) => {
++                let mut sum = Affine { fixed: 0, scale: 0 };
++                for a in v {
++                    sum = sum.add(self.visit(a)?)?;
++                }
++                Some(sum)
++            }
++            Ast::Repeat(a, min, Some(max), _) if min == max => {
++                // Captures in repeated bodies need an independent multiplicity analysis.
++                if !matches!(single(a), Ast::Class(_) | Ast::Lit(_)) {
++                    return None;
++                }
++                let inner = self.visit(a)?;
++                constant(inner.fixed.checked_mul(*min)?)
++            }
++            Ast::Capture(id, body) => {
++                let size = if let Ast::Repeat(c, min, max, _) = single(body) {
++                    if matches!(single(c), Ast::Class(_)) && *max != Some(*min) {
++                        if self.variable.is_some() {
++                            return None;
++                        }
++                        self.variable = Some(*id);
++                        Affine { fixed: 0, scale: 1 }
++                    } else {
++                        self.visit(body)?
++                    }
++                } else {
++                    self.visit(body)?
++                };
++                self.captures.insert(*id, size);
++                Some(size)
++            }
++            Ast::Backref(id) => self.captures.get(id).copied(),
++            Ast::Emit(e) => {
++                let f = FastExpr::compile(e)?;
++                let id = f.emitted_capture()?;
++                self.captures.get(&id).copied()
++            }
++            Ast::Guard(e) => {
++                let f = FastExpr::compile(e)?;
++                let variable = self.variable?;
++                self.captures.get(&variable)?;
++                let (min, max, constant_bytes) = f.length_bounds(variable)?;
++                let next = GuardBounds {
++                    min,
++                    max,
++                    constant_bytes,
++                };
++                self.guard = Some(self.guard.map_or(next, |g| g.intersect(next)));
++                constant(0)
++            }
++            _ => None,
++        }
++    }
++}
++pub fn lower(a: &Ast, code: &mut [Inst]) {
++    let mut analysis = Analysis::default();
++    let Some(size) = analysis.visit(a) else {
++        return;
++    };
++    let Some(id) = analysis.variable else {
++        return;
++    };
++    if size.scale == 0 {
++        return;
++    }
++    for pc in 0..code.len().saturating_sub(2) {
++        if !matches!(code[pc],Inst::SaveStart(i) if i==id)
++            || !matches!(code[pc+2],Inst::SaveEnd(i) if i==id)
++        {
++            continue;
++        }
++        let (class, min, max, ambiguous) = match &code[pc + 1] {
++            Inst::Run(c, n, m, _) => (c.clone(), *n, *m, true),
++            Inst::AtomicRun(c, n, m) => (c.clone(), *n, *m, false),
++            _ => continue,
++        };
++        if (size.scale > 1 && ambiguous) || analysis.guard.is_some() {
++            code[pc + 1] = Inst::SizedRun(Box::new(SizedRun {
++                class,
++                min,
++                max,
++                fixed: size.fixed,
++                scale: size.scale,
++                guard: analysis.guard,
++            }));
++        }
++    }
++}
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,7 +1,9 @@
+ pub mod baseline;
++pub mod cache;
+ pub mod expr;
+ mod fast_expr;
+ pub mod jit;
++mod length;
+ pub mod pattern;
+ use expr::{Captures, EvalError, Params, Value};
+ use pattern::Inst;
+@@ -44,8 +46,29 @@
+ #[derive(Default)]
+ pub struct Scratch {
+     caps: Captures,
++    slots: Vec<CaptureSlot>,
+     stack: Vec<Frame>,
+-    undo: Vec<(usize, Option<(usize, usize)>)>,
++    undo: Vec<(usize, CaptureSlot)>,
++}
++/// Explicit native ABI: MAX start = missing; MAX end = open capture.
++#[derive(Clone, Copy, Debug)]
++#[repr(C)]
++pub(crate) struct CaptureSlot {
++    start: usize,
++    end: usize,
++}
++impl CaptureSlot {
++    const MISSING: Self = Self {
++        start: usize::MAX,
++        end: usize::MAX,
++    };
++    fn span(self) -> Option<(usize, usize)> {
++        (self.start != usize::MAX).then_some((self.start, self.end))
++    }
++}
++fn capture_view(slots: &[CaptureSlot], out: &mut Captures) {
++    out.clear();
++    out.extend(slots.iter().map(|c| c.span()));
+ }
+ impl Scratch {
+     pub fn captures(&self) -> &[Option<(usize, usize)>] {
+@@ -58,6 +81,7 @@
+     pub params: Params,
+     fast: Vec<Option<fast_expr::FastExpr>>,
+     rejection_literal: Option<Vec<u8>>,
++    backtracking: bool,
+ }
+ pub struct Engine {
+     program: Box<Program>,
+@@ -95,6 +119,9 @@
+             })
+             .collect();
+         let program = Box::new(Program {
++            backtracking: code
++                .iter()
++                .any(|i| matches!(i, Inst::Run(..) | Inst::Split(..))),
+             code,
+             fast,
+             rejection_literal: if mode == Mode::Raw {
+@@ -125,8 +152,18 @@
+         }
+     }
+     pub fn run_with(&self, input: &[u8], limits: Limits, scratch: &mut Scratch) -> MatchStatus {
++        let status = self.run_internal(input, limits, scratch);
++        if status == MatchStatus::Match {
++            capture_view(&scratch.slots, &mut scratch.caps);
++        }
++        status
++    }
++    fn run_internal(&self, input: &[u8], limits: Limits, scratch: &mut Scratch) -> MatchStatus {
+         scratch.caps.clear();
+-        scratch.caps.resize(self.program.names.len(), None);
++        scratch.slots.clear();
++        scratch
++            .slots
++            .resize(self.program.names.len(), CaptureSlot::MISSING);
+         scratch.stack.clear();
+         scratch.undo.clear();
+         if let Some(required) = &self.program.rejection_literal {
+@@ -135,13 +172,15 @@
+             }
+         }
+         let mut r = Runtime {
++            capture_ptr: scratch.slots.as_mut_ptr(),
+             input_ptr: input.as_ptr(),
+             input_len: input.len(),
+             step_limit: limits.steps,
+             program: &self.program,
+             input,
+             pos: 0,
+-            caps: &mut scratch.caps,
++            caps: &mut scratch.slots,
++            view: &mut scratch.caps,
+             stack: &mut scratch.stack,
+             undo: &mut scratch.undo,
+             steps: 0,
+@@ -160,18 +199,14 @@
+         }
+     }
+     pub fn is_match_with(&self, input: &[u8], scratch: &mut Scratch) -> Result<bool, String> {
+-        match self.run_with(input, Limits::default(), scratch) {
++        match self.run_internal(input, Limits::default(), scratch) {
+             MatchStatus::Match => Ok(true),
+             MatchStatus::NoMatch => Ok(false),
+             MatchStatus::Budget => Err("resource budget exhausted".into()),
+         }
+     }
+     pub fn is_match(&self, input: &[u8]) -> Result<bool, String> {
+-        match self.run(input, Limits::default()) {
+-            Outcome::Match(_) => Ok(true),
+-            Outcome::NoMatch => Ok(false),
+-            Outcome::Budget => Err("resource budget exhausted".into()),
+-        }
++        self.is_match_with(input, &mut Scratch::default())
+     }
+ }
+ struct Frame {
+@@ -186,12 +221,14 @@
+     input_ptr: *const u8,
+     input_len: usize,
+     step_limit: usize,
++    capture_ptr: *mut CaptureSlot,
+     program: &'a Program,
+     input: &'a [u8],
+     pos: usize,
+-    caps: &'a mut Captures,
++    caps: &'a mut Vec<CaptureSlot>,
++    view: &'a mut Captures,
+     stack: &'a mut Vec<Frame>,
+-    undo: &'a mut Vec<(usize, Option<(usize, usize)>)>,
++    undo: &'a mut Vec<(usize, CaptureSlot)>,
+     steps: usize,
+     limits: Limits,
+     exhausted: bool,
+@@ -201,19 +238,27 @@
+         if !self.stack.is_empty() {
+             self.undo.push((id, self.caps[id]));
+         }
+-        self.caps[id] = Some((self.pos, usize::MAX));
++        self.caps[id] = CaptureSlot {
++            start: self.pos,
++            end: usize::MAX,
++        };
+     }
+     fn save_end(&mut self, id: usize) {
+         if !self.stack.is_empty() {
+             self.undo.push((id, self.caps[id]));
+         }
+-        self.caps[id] = Some((
+-            self.caps[id].expect("compiler pairs capture markers").0,
+-            self.pos,
+-        ));
++        debug_assert_ne!(
++            self.caps[id].start,
++            usize::MAX,
++            "compiler pairs capture markers"
++        );
++        self.caps[id].end = self.pos;
+     }
+     fn backref(&mut self, id: usize) -> bool {
+-        if let Some((a, z)) = self.caps[id].filter(|(a, z)| a <= z && *z <= self.input.len()) {
++        if let Some((a, z)) = self.caps[id]
++            .span()
++            .filter(|(a, z)| a <= z && *z <= self.input.len())
++        {
+             if self.input[self.pos..].starts_with(&self.input[a..z]) {
+                 self.pos += z - a;
+                 return true;
+@@ -222,7 +267,7 @@
+         false
+     }
+     fn fast_expression(&mut self, pc: usize) -> i64 {
+-        match self.program.fast[pc].as_ref().unwrap().test(
++        match self.program.fast[pc].as_ref().unwrap().test_slots(
+             self.input,
+             self.caps,
+             self.pos,
+@@ -330,6 +375,43 @@
+                     true
+                 }
+             }
++            Inst::SizedRun(s) => {
++                if let Some(n) = s.count(self.input.len(), self.limits.expression_bytes) {
++                    if n <= self.input.len() - self.pos
++                        && self.input[self.pos..self.pos + n]
++                            .iter()
++                            .all(|b| s.class.has(*b))
++                    {
++                        self.pos += n;
++                        true
++                    } else {
++                        false
++                    }
++                } else {
++                    false
++                }
++            }
++            Inst::CaptureRun(id, c, min, max) => {
++                let start = self.pos;
++                let bound = self
++                    .input
++                    .len()
++                    .min(start.saturating_add(max.unwrap_or(usize::MAX)));
++                let mut end = start;
++                while end < bound && c.has(self.input[end]) {
++                    end += 1;
++                }
++                if end - start < *min {
++                    false
++                } else {
++                    if !self.stack.is_empty() {
++                        self.undo.push((*id, self.caps[*id]));
++                    }
++                    self.caps[*id] = CaptureSlot { start, end };
++                    self.pos = end;
++                    true
++                }
++            }
+             Inst::SaveStart(id) => {
+                 self.save_start(*id);
+                 true
+@@ -343,10 +425,11 @@
+                 if self.program.fast[pc].is_some() {
+                     return self.fast_expression(pc);
+                 }
++                capture_view(self.caps, self.view);
+                 match expr::eval(
+                     e,
+                     self.input,
+-                    self.caps,
++                    self.view,
+                     &self.program.params,
+                     &mut BTreeMap::new(),
+                     self.limits.expression_bytes,
+--- a/src/pattern.rs
++++ b/src/pattern.rs
+@@ -410,11 +410,87 @@
+                 Ast::Seq(out)
+             }
+         }
+-        Ast::Alt(v) => Ast::Alt(v.iter().map(|a| specialize(a, p)).collect()),
++        Ast::Alt(v) => factor_alternatives(v.iter().map(|a| specialize(a, p)).collect()),
+         Ast::Capture(id, a) => Ast::Capture(*id, Box::new(specialize(a, p))),
+         Ast::Repeat(a, n, m, g) => Ast::Repeat(Box::new(specialize(a, p)), *n, *m, *g),
+         a => a.clone(),
+     }
++}
++
++// Factor only contiguous alternatives beginning with an actual literal. Capture
++// markers and guards are barriers: no observable capture write is moved.
++fn factor_alternatives(mut v: Vec<Ast>) -> Ast {
++    fn leading(a: &Ast) -> Option<&[u8]> {
++        match a {
++            Ast::Lit(s) if !s.is_empty() => Some(s),
++            Ast::Seq(v) => v.first().and_then(leading),
++            _ => None,
++        }
++    }
++    fn strip(a: Ast, n: usize) -> Ast {
++        match a {
++            Ast::Lit(s) => {
++                if n == s.len() {
++                    Ast::Empty
++                } else {
++                    Ast::Lit(s[n..].to_vec())
++                }
++            }
++            Ast::Seq(mut v) => {
++                let first = strip(v.remove(0), n);
++                if !matches!(first, Ast::Empty) {
++                    v.insert(0, first);
++                }
++                if v.is_empty() {
++                    Ast::Empty
++                } else {
++                    Ast::Seq(v)
++                }
++            }
++            _ => unreachable!("prefix was checked"),
++        }
++    }
++    if v.len() == 1 {
++        return v.pop().unwrap();
++    }
++    let common = leading(&v[0])
++        .map(|s| {
++            let mut n = s.len();
++            for a in &v[1..] {
++                if let Some(t) = leading(a) {
++                    n = n.min(s.iter().zip(t).take_while(|(a, b)| a == b).count());
++                } else {
++                    return 0;
++                }
++            }
++            n
++        })
++        .unwrap_or(0);
++    if common > 0 {
++        let prefix = leading(&v[0]).unwrap()[..common].to_vec();
++        let tail = factor_alternatives(v.into_iter().map(|a| strip(a, common)).collect());
++        return Ast::Seq(vec![Ast::Lit(prefix), tail]);
++    }
++    let mut out = Vec::new();
++    let mut items = v.into_iter().peekable();
++    while let Some(first) = items.next() {
++        let byte = leading(&first).map(|s| s[0]);
++        let mut group = vec![first];
++        if byte.is_some() {
++            while items
++                .peek()
++                .is_some_and(|a| leading(a).map(|s| s[0]) == byte)
++            {
++                group.push(items.next().unwrap());
++            }
++        }
++        out.push(if group.len() > 1 {
++            factor_alternatives(group)
++        } else {
++            group.pop().unwrap()
++        });
++    }
++    Ast::Alt(out)
+ }
+ 
+ #[derive(Clone, Debug)]
+@@ -424,6 +500,8 @@
+     Run(Class, usize, Option<usize>, bool),
+     /// Every shorter endpoint is statically known to fail the continuation.
+     AtomicRun(Class, usize, Option<usize>),
++    CaptureRun(usize, Class, usize, Option<usize>),
++    SizedRun(Box<crate::length::SizedRun>),
+     SaveStart(usize),
+     SaveEnd(usize),
+     Backref(usize),
+@@ -620,10 +698,56 @@
+             }
+         }
+     }
++    if pe {
++        crate::length::lower(a, &mut code);
++        fuse_capture_runs(&mut code);
++    }
+     if code.len() > 32768 {
+         return Err("expanded program exceeds 32768 instructions".into());
+     }
+     Ok(code)
++}
++
++fn fuse_capture_runs(code: &mut Vec<Inst>) {
++    use std::collections::BTreeSet;
++    let targets: BTreeSet<_> = code
++        .iter()
++        .flat_map(|i| match i {
++            Inst::Split(a, b) | Inst::Switch(_, a, b) => vec![*a, *b],
++            Inst::Jump(a) => vec![*a],
++            _ => vec![],
++        })
++        .collect();
++    let mut next = Vec::with_capacity(code.len());
++    let mut map = vec![0; code.len() + 1];
++    let mut pc = 0;
++    while pc < code.len() {
++        map[pc] = next.len();
++        if let [Inst::SaveStart(id), Inst::AtomicRun(c, n, m), Inst::SaveEnd(end), ..] = &code[pc..]
++        {
++            if id == end && !targets.contains(&(pc + 1)) && !targets.contains(&(pc + 2)) {
++                map[pc + 1] = next.len();
++                map[pc + 2] = next.len();
++                next.push(Inst::CaptureRun(*id, c.clone(), *n, *m));
++                pc += 3;
++                continue;
++            }
++        }
++        next.push(code[pc].clone());
++        pc += 1;
++    }
++    map[code.len()] = next.len();
++    for i in &mut next {
++        match i {
++            Inst::Split(a, b) | Inst::Switch(_, a, b) => {
++                *a = map[*a];
++                *b = map[*b];
++            }
++            Inst::Jump(a) => *a = map[*a],
++            _ => {}
++        }
++    }
++    *code = next;
+ }
+ 
+ /// Necessary-literal filter for complex unbounded repeats only. It proves
+--- a/tests/next_semantics.rs
++++ b/tests/next_semantics.rs
+@@ -0,0 +1,225 @@
++use caprice::{baseline::Pcre, expr::Params, Engine, Limits, Mode, Outcome};
++use caprice::{cache::EngineCache, MatchStatus, Scratch};
++use std::rc::Rc;
++
++#[test]
++fn cache_keys_lru_and_native_lifetimes() {
++    let mut cache = EngineCache::new(2);
++    let empty = Params::new();
++    let a = cache.get_or_compile("a", &empty, Mode::Jit).unwrap();
++    let b = cache.get_or_compile("b", &empty, Mode::Jit).unwrap();
++    assert!(Rc::ptr_eq(
++        &a,
++        &cache.get_or_compile("a", &empty, Mode::Jit).unwrap()
++    ));
++    cache.get_or_compile("c", &empty, Mode::Jit).unwrap();
++    let b2 = cache.get_or_compile("b", &empty, Mode::Jit).unwrap();
++    assert!(!Rc::ptr_eq(&b, &b2));
++    assert!(b.is_match(b"b").unwrap());
++    cache.clear();
++    assert!(cache.is_empty());
++    assert!(a.is_match(b"a").unwrap());
++    let p = Params::from([("x".into(), b"alpha".to_vec())]);
++    let q = Params::from([("x".into(), b"beta".to_vec())]);
++    let pattern = "${(param x)}";
++    let one = cache.get_or_compile(pattern, &p, Mode::Jit).unwrap();
++    let two = cache.get_or_compile(pattern, &q, Mode::Jit).unwrap();
++    assert!(one.is_match(b"alpha").unwrap());
++    assert!(!two.is_match(b"alpha").unwrap());
++    let pe = cache.get_or_compile(pattern, &p, Mode::Pe).unwrap();
++    assert!(!Rc::ptr_eq(&one, &pe));
++    assert!(cache.get_or_compile("[", &empty, Mode::Jit).is_err());
++    assert_eq!(cache.len(), 2);
++    let mut disabled = EngineCache::new(0);
++    let x = disabled.get_or_compile("a", &empty, Mode::Pe).unwrap();
++    let y = disabled.get_or_compile("a", &empty, Mode::Pe).unwrap();
++    assert!(!Rc::ptr_eq(&x, &y));
++    assert!(disabled.is_empty());
++}
++
++#[test]
++fn stable_capture_slots_restore_through_fallback_and_reuse() {
++    let patterns = [
++        r#"(?<x>[ab]*)(?{(and (le (len (cap x)) 3) (not (eq (cap x) "b")))})"#,
++        r#"(?:(?<x>a)|(?<y>b))+${(concat (cap x) (cap y))}"#,
++        r#"(?<outer>(?<x>[ab]*)c)(?{(eq (slice (cap outer) 0 2) "ab")})"#,
++    ];
++    for pattern in patterns {
++        let raw = Engine::new(pattern, Params::new(), Mode::Raw).unwrap();
++        let jit = Engine::new(pattern, Params::new(), Mode::Jit).unwrap();
++        let mut scratch = Scratch::default();
++        for input in words(b"abc", 6) {
++            let _ = jit.run_with(
++                &input,
++                Limits {
++                    steps: 1,
++                    ..Limits::default()
++                },
++                &mut scratch,
++            );
++            let _ = jit.is_match_with(&input, &mut scratch);
++            let result = jit.run_with(&input, Limits::default(), &mut scratch);
++            match raw.run(&input, Limits::default()) {
++                Outcome::Match(c) => {
++                    assert_eq!(result, MatchStatus::Match);
++                    assert_eq!(scratch.captures(), c);
++                }
++                Outcome::NoMatch => assert_eq!(result, MatchStatus::NoMatch),
++                Outcome::Budget => panic!("bounded case exhausted"),
++            }
++        }
++    }
++}
++fn words(alphabet: &[u8], max: usize) -> Vec<Vec<u8>> {
++    let mut all = vec![vec![]];
++    let mut level = all.clone();
++    for _ in 0..max {
++        let mut next = vec![];
++        for s in &level {
++            for b in alphabet {
++                let mut s = s.clone();
++                s.push(*b);
++                next.push(s);
++            }
++        }
++        all.extend(next.clone());
++        level = next;
++    }
++    all
++}
++
++#[test]
++fn fused_capture_runs_preserve_restoration_and_all_byte_classes() {
++    for pattern in [
++        r"(?:(?<x>[ab]{1,3})-){1,5}\k<x>",
++        r"(?:(?<x>[ab]*)-){1,4}b\k<x>",
++    ] {
++        let raw = Engine::new(pattern, Params::new(), Mode::Raw).unwrap();
++        let jit = Engine::new(pattern, Params::new(), Mode::Jit).unwrap();
++        let mut pc = Pcre::new(pattern, true).unwrap();
++        for s in words(b"ab-", 7) {
++            let before = raw.run(&s, Limits::default());
++            assert_eq!(jit.run(&s, Limits::default()), before);
++            match (before, pc.run(&s).unwrap()) {
++                (Outcome::NoMatch, None) => {}
++                (Outcome::Match(c), Some(p)) => assert_eq!(c.as_slice(), &p[1..]),
++                (a, b) => panic!("{pattern} {s:?} {a:?} {b:?}"),
++            }
++        }
++    }
++    for pattern in [r"(?<x>[^;\n]{0,4})", r"(?<x>[A-Za-z0-9_]{0,4})"] {
++        let raw = Engine::new(pattern, Params::new(), Mode::Raw).unwrap();
++        let jit = Engine::new(pattern, Params::new(), Mode::Jit).unwrap();
++        for b in 0u8..=255 {
++            for n in 0..6 {
++                let s = vec![b; n];
++                assert_eq!(
++                    jit.run(&s, Limits::default()),
++                    raw.run(&s, Limits::default())
++                );
++            }
++        }
++    }
++}
++#[test]
++fn affine_lengths_and_guards_preserve_captures() {
++    let patterns = [
++        r"(?<x>[ab]{0,4})\k<x>",
++        r"(?<x>[ab]{0,4}?)\k<x>",
++        r"a(?<x>[ab]{0,4})a\k<x>b",
++        r"(?<x>[ab]*)\k<x>\k<x>",
++        r"(?<fixed>a)(?<x>[ab]{0,4})\k<fixed>\k<x>",
++        r"(?<outer>(?<x>[ab]{0,4})a)\k<outer>",
++        r"(?<x>[ab]{0,4})-(?<y>a{2})\k<x>\k<y>",
++        r"(?<x>[ab]*)(?<y>[ab]*)\k<x>",
++        r#"(?<x>[ab]*)-${(upper (cap x))}"#,
++        r#"(?<x>[ab]*)(?{(le (len (cap x)) 2)})"#,
++        r#"(?<x>[ab]*)(?{(lt (len (cap x)) 0)})"#,
++        r#"(?<x>[ab]*)(?{(eq (len (cap x)) 2)})"#,
++        r#"(?<x>[ab]*)(?{(eq (upper (cap x)) "AB")})"#,
++        r#"(?<x>[ab]*)(?{(call (lambda (s Str) (eq (lower s) "ab")) (cap x))})"#,
++        r#"(?<x>[ab]*)(?{(le (len (cap x)) 2)})(?{(eq (cap x) "ab")})"#,
++        r#"(?<x>[ab]*)(?{(call (lambda (unused Str) true) (cap x))})"#,
++    ];
++    let inputs = words(b"abAB-", 5);
++    let mut cases = 0;
++    for p in patterns {
++        let raw = Engine::new(p, Params::new(), Mode::Raw).unwrap();
++        let pe = Engine::new(p, Params::new(), Mode::Pe).unwrap();
++        let jit = Engine::new(p, Params::new(), Mode::Jit).unwrap();
++        for s in &inputs {
++            let expected = raw.run(s, Limits::default());
++            assert_eq!(pe.run(s, Limits::default()), expected, "PE {p} {s:?}");
++            assert_eq!(jit.run(s, Limits::default()), expected, "JIT {p} {s:?}");
++            cases += 1;
++        }
++    }
++    println!("affine_pattern_input_cases={cases}");
++}
++#[test]
++fn length_bounds_do_not_hide_mandatory_expression_limits() {
++    for p in [
++        r#"(?<x>[a-z]+)(?{(le (len (cap x)) 2)})"#,
++        r#"(?<x>[a-z]+)(?{(eq (lower (cap x)) "admin")})"#,
++    ] {
++        for mode in [Mode::Raw, Mode::Pe, Mode::Jit] {
++            let e = Engine::new(p, Params::new(), mode).unwrap();
++            assert_eq!(
++                e.run(
++                    b"abcdef",
++                    Limits {
++                        expression_bytes: 3,
++                        ..Limits::default()
++                    }
++                ),
++                Outcome::Budget,
++                "{p} {mode:?}"
++            );
++            assert_eq!(e.run(b"abcdef", Limits::default()), Outcome::NoMatch);
++        }
++    }
++}
++#[test]
++fn prefix_factoring_retains_priority_and_capture_side_effects() {
++    let patterns = [
++        "foo|foobar|foobaz",
++        "(?<x>foo|foobar|foobaz)",
++        "(?:a|ab|ac|b|ba):[ab]*",
++        "(?:ab|abc|a|ac|b|ba)",
++        r"(?:(?<x>ab)c|(?<y>ab)d)\k<y>",
++        r#"(?<x>foo|foobar|foobaz)(?{(eq (cap x) "foobar")})"#,
++        r#"(?<x>ab|abc|a)(?{(not (eq (cap x) "ab"))})c?"#,
++    ];
++    let mut inputs = words(b"abc:", 5);
++    inputs.extend([
++        b"foo".to_vec(),
++        b"foobar".to_vec(),
++        b"foobaz".to_vec(),
++        b"abdab".to_vec(),
++    ]);
++    let mut cases = 0;
++    for p in patterns {
++        let engines =
++            [Mode::Raw, Mode::Pe, Mode::Jit].map(|m| Engine::new(p, Params::new(), m).unwrap());
++        let mut pcre = if p.contains("(?{") {
++            None
++        } else {
++            Some(Pcre::new(p, true).unwrap())
++        };
++        for s in &inputs {
++            let expected = engines[0].run(s, Limits::default());
++            for e in &engines[1..] {
++                assert_eq!(e.run(s, Limits::default()), expected, "{p} {s:?}");
++            }
++            if let Some(ref mut pc) = pcre {
++                match (&expected, pc.run(s).unwrap()) {
++                    (Outcome::NoMatch, None) => {}
++                    (Outcome::Match(c), Some(p)) => assert_eq!(c.as_slice(), &p[1..], "{s:?}"),
++                    (a, b) => panic!("PCRE disagreement {p} {s:?}: {a:?} {b:?}"),
++                }
++            }
++            cases += 1;
++        }
++    }
++    println!("prefix_pattern_input_cases={cases}");
++}

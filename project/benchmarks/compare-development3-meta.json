@@ -1,0 +1,10 @@
+{
+  "clock": "Instant",
+  "compile_samples": 7,
+  "pcre2": "10.49 2026-09-28",
+  "samples": 9,
+  "seed_final": 6989144588523257715,
+  "target_sample_ns": 20000000,
+  "validation": "acceptance; v0.2/v0.3 capture spans for shared patterns",
+  "workloads": 17
+}

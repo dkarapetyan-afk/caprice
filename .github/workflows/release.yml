@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  linux:
+    name: Linux x86-64 release
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Test
+        working-directory: project
+        run: bash scripts/cargo_local.sh test --release --frozen
+
+      - name: Clippy
+        working-directory: project
+        run: bash scripts/cargo_local.sh clippy --release --frozen --all-targets -- -D warnings
+
+      - name: Build release binaries
+        working-directory: project
+        run: bash scripts/cargo_local.sh build --release --frozen --bins --examples
+
+      - name: Package
+        working-directory: project
+        run: bash scripts/package_release.sh "${RUNNER_TEMP}/caprice-dist"
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v6
+        with:
+          name: caprice-linux-x86_64
+          path: |
+            ${{ runner.temp }}/caprice-dist/*.tar.gz
+            ${{ runner.temp }}/caprice-dist/*.tar.gz.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            ${{ runner.temp }}/caprice-dist/*.tar.gz
+            ${{ runner.temp }}/caprice-dist/*.tar.gz.sha256
+          fail_on_unmatched_files: true
+          generate_release_notes: true

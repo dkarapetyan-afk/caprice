@@ -1,0 +1,62 @@
+{
+  "source_sha256": {
+    "Cargo.toml": "7994880d7b5e81c7a462f4d059b05a5c19d47e1b5cfe656dc6c0d0532dbdc5f1",
+    "Cargo.lock": "297d608358d39059e4612c56f0a2d1c5cfc8bd09cfe43c038253aeffc3adbe45",
+    "src/allocations.rs": "8835b215ca404237d4984eab75cb937c6d856469703297856c146311da4461d0",
+    "src/baseline.rs": "944084ce024a758f615e864ed0af8c242e73e402bb0767581b550bf224d48309",
+    "src/benchmark.rs": "78ecf8e633a7faf3dd57e7f84e32cce501b05e31a816574db5fdc97d9fc7cbe5",
+    "src/expr.rs": "62d593b384399d6c98b5973201ee7e37e51b4af987a3d29a4ff9ab61a2148589",
+    "src/fast_expr.rs": "700072fdecfb99aabacb953a9d3235b80e7e879af8edc9e64ea11aa564e93302",
+    "src/jit.rs": "8cfa5870241d94d984786763ecf4a8487bc9d7788823512d19d3c7bf0e16a674",
+    "src/lib.rs": "5a3a14c77e97b8df4972901a5b8bf7c911f9650440998055388bf7535df2eec5",
+    "src/main.rs": "57c75e3e736fa0643d381300c82219d772b4d9753c39128f59efebcc5d8d98de",
+    "src/pattern.rs": "469fb94a71a5285a6e21c65908783a829ce24aeb442d86919b1b885cc557db81",
+    "tests/performance_semantics.rs": "4b24c4dc8ae27ac1987ed949d2007adeb77fc8113229326ffac3abee15a90055",
+    "tests/semantics.rs": "a6c2dd58dd6b02fe5bc01a0090c9be291ce07bded1d9b556bdb6693d35d17902",
+    "scripts/make_validation_corpus.py": "c981c32dcd0951d35e0b01864e1865bb8490d37eecc70ab7aa253e2eddc75aa0",
+    "scripts/measure.py": "eb1e51db7995db0fe810c080eb6d80a6b3d6bbae5d28bd5a9cbf21972e8bf692"
+  },
+  "binary_sha256": {
+    "target/release/benchmark": "29483ccb5b0ebe79983ad4ed4947e0f9cb961382646aa9b24b3da1c2f5fc1d1a",
+    "benchmarks/submitted-benchmark": "c2f19e07dc0ed2a9efb2dc3804b280a96e3a62c0f6f68a22cf2898d1acac8bf3"
+  },
+  "corpus_sha256": {
+    "corpus.json": "a15b4caf5451eed4e3a07aceffba3a7e61d20280998cd421a45ca2683466bc14",
+    "validation-corpus.json": "5c542c352f49a7aca260cae8575f3745c72d7450e1942e6640f3d31c5d321ef8"
+  },
+  "cpu": 0,
+  "processes_per_corpus": 3,
+  "samples_per_job": 9,
+  "compile_samples_per_job": 7,
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "result_sha256": {
+    "submitted1-compile.csv": "6e03c9d9039e6121ec251ab4df8cb17dede7e45791e0bc7431dbd60f3ddda7c3",
+    "submitted1-match.csv": "ea7af65d52d3052ff2979c27394052ab0cadd3d67a2b0f92a8186ca5780ff43f",
+    "submitted1-stress.csv": "6bfb34b788ee041e36c69fc3ff7dab88e9ca7c95257a511587f1b69daba9207c",
+    "submitted2-compile.csv": "de9deba7405e2d586b25b24918e6fe240197020a7f44e8360ceccf245804c852",
+    "submitted2-match.csv": "49f3d733dd5967acf94aaa1e2f2e825a8a621861effc0249570a34d73a162f7e",
+    "submitted2-stress.csv": "d7ec372895eadec8807f9d648347bd2ae4a18f0123858ecc202756ba4e0edee1",
+    "submitted3-compile.csv": "3b64eeda1c1f9e3cadd7b62087ff72604cf34de953695648670e76c4a5048c56",
+    "submitted3-match.csv": "41ea724efb2c7a404de355dc88e172d4ae7ac3dfe899d7d51cc072b79078368e",
+    "submitted3-stress.csv": "92d66f622720310a173e88826754244120964c06ae440ce0d3383dc46be61e96",
+    "final1-compile.csv": "1ba71b124c67a10b2802d4dcac4593a8836c4a00e70623e19d0e5f80946da52d",
+    "final1-match.csv": "b5597de990bba2e0c85293d1b6b3f737df89b4fe72769a82779035d5ab4413d8",
+    "final1-stress.csv": "625f9b1160af4ea607c0236882ead0a7c35e3396a11350679b16ac2135971d45",
+    "final2-compile.csv": "04cc0b1ecccbbe492b486f7decef55dd05403f1fe8c4c2bd72c19b042cefa9b1",
+    "final2-match.csv": "c50150940c8593324727baabcde52b440cbd3606faa92d4b3950a8eae80372dc",
+    "final2-stress.csv": "840e9a3e8b9e752676a7838b972ba513240c4db5941074fcb55d0f9b695cba0e",
+    "final3-compile.csv": "f1bb57327dcfa9e0aa6613ca294d0e4f606da6fc16005e99bd23129404d7ea09",
+    "final3-match.csv": "acd1cc3a4510f029bb8bfd57d32aff293d685a0857780d1b588644edf0eda717",
+    "final3-stress.csv": "439594d50de320de7d5fb738480a0a7d754b3b844d4c42b82d4d10d86a710b74",
+    "validation1-compile.csv": "a295af27feb633a82be2649575e97c5c9b4be5d1bcee338efb2fe7f593e5c597",
+    "validation1-match.csv": "f7f814330dc47f909a3f8f3384fccce0e94412c02a8693ea535e130f34e49505",
+    "validation1-stress.csv": "70ede0ff81ca7c4f7c4e3c05245b7dc64955429134560ffafdaa1b9ac50da58a",
+    "validation2-compile.csv": "9a9fb3f1166b25229505823295dc35f8e7e9c122e57af0420b5891560e73dcf2",
+    "validation2-match.csv": "08912221dd6e9845438ea62131b55ab8fa4fc15a4f03bb4338faaa510f575125",
+    "validation2-stress.csv": "3699f84036bee217016f01bc8fd9004ad2292d267bbf0321748acea9bddccf85",
+    "validation3-compile.csv": "adac61b5cad1c507bda5edb6b56efa4085ac4c251dc7d4a85bceda6740f5fe74",
+    "validation3-match.csv": "dfd7f966cf29417069ff0a634c3544aa1055a86d29fb400c61a83e4c5a3d9368",
+    "validation3-stress.csv": "dfed4c244e54a1f63cbffe9e4d2426d96992106f718615a340ab77a69443f46a"
+  }
+}

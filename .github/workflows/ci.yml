@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux x86-64
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Vendored sources match the lockfile
+        working-directory: project
+        run: |
+          if ! cargo metadata --offline --frozen --format-version 1 >/dev/null; then
+            printf '%s\n' 'project/vendor does not satisfy Cargo.lock. Run bash project/scripts/refresh_vendor.sh and commit project/vendor.' >&2
+            exit 1
+          fi
+
+      - name: Format
+        working-directory: project
+        run: cargo fmt --all -- --check
+
+      - name: Test
+        working-directory: project
+        run: bash scripts/cargo_local.sh test --release --frozen
+
+      - name: Clippy
+        working-directory: project
+        run: bash scripts/cargo_local.sh clippy --release --frozen --all-targets -- -D warnings

@@ -1,0 +1,34 @@
+# Dependabot for the caprice-local-handoff repository root.
+# Historical crates are intentionally absent: project/baseline-v0.1.0,
+# project/baseline-v0.2.0, and original-v0.1.0 stay pinned.
+#
+# Cargo updates rewrite project/Cargo.toml and project/Cargo.lock only.
+# CI builds offline from project/vendor. After a Cargo pull request, run
+# bash project/scripts/refresh_vendor.sh and commit project/vendor with it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: cargo
+    directory: /project
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: cargo
+    groups:
+      cargo:
+        patterns:
+          - "*"

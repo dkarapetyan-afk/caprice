@@ -1,0 +1,11 @@
+body { max-width: 960px; margin: 3rem auto; padding: 0 1.5rem; font-family: Georgia,serif; line-height: 1.58; color: #17212a; }
+h1,h2,h3 { line-height: 1.2; color: #174d60; }
+header { border-bottom: 2px solid #174d60; margin-bottom: 2rem; padding-bottom: 1rem; }
+pre { overflow: auto; padding: 1rem; background: #f4f6f7; font-size: .86rem; }
+table { border-collapse: collapse; width: 100%; font-size: .86rem; margin: 1.4rem 0; }
+td,th { border-bottom: 1px solid #c9d6dc; padding: .35rem .45rem; }
+th { background: #eef3f5; }
+img { max-width: 100%; }
+a { color: #175c82; }
+figcaption { font-size: .9rem; color: #4a5c67; }
+@media print { body { max-width: none; margin: 0; font-size: 10pt; } pre,figure { break-inside: avoid; } }

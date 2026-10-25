@@ -1,0 +1,38 @@
+(* Caprice 0.1.0. Pattern whitespace is significant. *)
+pattern = sequence, { "|", sequence } ;
+sequence = { repeat } ;
+repeat = atom, [ quantifier, [ "?" ] ] ;
+quantifier = "*" | "+" | "?" | "{", nat, "}"
+           | "{", nat, ",", [ nat ], "}" ;
+atom = literal-byte | escaped-byte | class | "." | "^" | "$"
+     | "(?:", pattern, ")"
+     | "(?<", identifier, ">", pattern, ")"
+     | "\k<", identifier, ">"
+     | "${", expression, "}"
+     | "(?{", expression, "})" ;
+class = "[", [ "^" ], class-unit, { class-unit }, "]" ;
+class-unit = class-byte | class-byte, "-", class-byte | shorthand ;
+shorthand = "\d" | "\w" | "\s" ;
+escaped-byte = "\n" | "\r" | "\t" | "\x", hex, hex
+             | "\", nonalphanumeric-byte ;
+identifier = letter-or-underscore, { letter-or-underscore | digit } ;
+nat = digit, { digit } ;
+type = "Str" | "Nat" | "Bool" ;
+expression = json-string | nat | "true" | "false" | variable
+           | "(cap", ws, identifier, ")"
+           | "(param", ws, identifier, ")"
+           | "(", operator, { ws, expression }, ")"
+           | "(call", ws, "(lambda", ws, "(", variable, ws, type, ")",
+             ws, expression, ")", ws, expression, ")" ;
+operator = "lower" | "upper" | "trim" | "concat" | "slice" | "len"
+         | "eq" | "contains" | "starts" | "ends" | "lt" | "le"
+         | "and" | "or" | "not" ;
+
+(* This grammar uses whitespace separators for readability. The tokenizer also
+   recognizes parentheses and JSON strings without intervening whitespace.
+   Arity and operand types are checked separately. Expression delimiters inside
+   JSON strings do not terminate interpolation or guards. Backreferences and
+   capture expressions must name a previously declared group. A participating
+   empty capture is defined. An unset or open capture is undefined.
+   Pattern literals are UTF-8 source bytes, not Unicode scalar matching.
+   Unbounded repetition requires a statically nonnullable body. *)

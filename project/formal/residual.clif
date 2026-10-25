@@ -1,0 +1,178 @@
+; Caprice v0.3.0 residual native byte-operation IR
+; pattern: (?<x>[a-z]{1,8}):${(upper (cap x))}(?{(le (len (cap x)) 8)})
+function u0:0(i64) -> i64 system_v {
+    sig0 = (i64, i64) -> i64 system_v
+    sig1 = (i64) -> i64 system_v
+    sig2 = (i64, i64) -> i64 system_v
+    sig3 = (i64, i64) -> i64 system_v
+    sig4 = (i64, i64) -> i64 system_v
+    sig5 = (i64, i64) -> i64 system_v
+    fn0 = u0:0 sig0
+    fn1 = u0:5 sig1
+    fn2 = u0:1 sig2
+    fn3 = u0:2 sig3
+    fn4 = u0:3 sig4
+    fn5 = u0:4 sig5
+
+block0(v0: i64):
+    jump block1
+
+block1:
+    v2 = load.i64 v0+96
+    v3 = load.i64 v0+16
+    v4 = icmp uge v2, v3
+    brif v4, block12, block14
+
+block14:
+    v5 = iadd_imm.i64 v2, 1
+    store v5, v0+96
+    v6 = load.i64 v0+56
+    v7 = load.i64 v0+24
+    store v6, v7
+    v8 = iconst.i64 -1
+    store v8, v7+8  ; v8 = -1
+    jump block2
+
+block2:
+    v9 = iconst.i64 1
+    v10 = call fn0(v0, v9)  ; v9 = 1
+    v11 = icmp_imm eq v10, 2
+    brif v11, block12, block15
+
+block15:
+    v12 = icmp_imm.i64 eq v10, 0
+    brif v12, block3, block9
+
+block3:
+    v13 = load.i64 v0+96
+    v14 = load.i64 v0+16
+    v15 = icmp uge v13, v14
+    brif v15, block12, block16
+
+block16:
+    v16 = iadd_imm.i64 v13, 1
+    store v16, v0+96
+    v17 = load.i64 v0+56
+    v18 = load.i64 v0+24
+    store v17, v18+8
+    jump block4
+
+block4:
+    v19 = load.i64 v0+96
+    v20 = load.i64 v0+16
+    v21 = icmp uge v19, v20
+    brif v21, block12, block17
+
+block17:
+    v22 = iadd_imm.i64 v19, 1
+    store v22, v0+96
+    v23 = load.i64 v0+56
+    v24 = load.i64 v0+8
+    v25 = isub v24, v23
+    v26 = icmp_imm uge v25, 1
+    brif v26, block18, block9
+
+block18:
+    v27 = load.i64 v0
+    v28 = iadd v27, v23
+    v29 = iconst.i8 1
+    v30 = load.i8 v28
+    v31 = icmp_imm eq v30, 58
+    v32 = band v29, v31  ; v29 = 1
+    brif v32, block19, block9
+
+block19:
+    v33 = iadd_imm.i64 v23, 1
+    store v33, v0+56
+    jump block5
+
+block5:
+    v34 = load.i64 v0+96
+    v35 = load.i64 v0+16
+    v36 = icmp uge v34, v35
+    brif v36, block12, block20
+
+block20:
+    v37 = iadd_imm.i64 v34, 1
+    store v37, v0+96
+    v38 = iconst.i64 4
+    v39 = call fn5(v0, v38)  ; v38 = 4
+    v40 = icmp_imm eq v39, 2
+    brif v40, block12, block21
+
+block21:
+    v41 = icmp_imm.i64 eq v39, 0
+    brif v41, block6, block9
+
+block6:
+    v42 = load.i64 v0+96
+    v43 = load.i64 v0+16
+    v44 = icmp uge v42, v43
+    brif v44, block12, block22
+
+block22:
+    v45 = iadd_imm.i64 v42, 1
+    store v45, v0+96
+    v46 = load.i64 v0+56
+    v47 = load.i64 v0+8
+    v48 = icmp eq v46, v47
+    brif v48, block7, block9
+
+block7:
+    v49 = load.i64 v0+96
+    v50 = load.i64 v0+16
+    v51 = icmp uge v49, v50
+    brif v51, block12, block23
+
+block23:
+    v52 = iadd_imm.i64 v49, 1
+    store v52, v0+96
+    v53 = iconst.i64 6
+    v54 = call fn5(v0, v53)  ; v53 = 6
+    v55 = icmp_imm eq v54, 2
+    brif v55, block12, block24
+
+block24:
+    v56 = icmp_imm.i64 eq v54, 0
+    brif v56, block8, block9
+
+block8:
+    v57 = load.i64 v0+96
+    v58 = load.i64 v0+16
+    v59 = icmp uge v57, v58
+    brif v59, block12, block25
+
+block25:
+    v60 = iadd_imm.i64 v57, 1
+    store v60, v0+96
+    v61 = load.i64 v0+56
+    v62 = load.i64 v0+8
+    v63 = icmp eq v61, v62
+    brif v63, block10, block9
+
+block9:
+    v64 = call fn1(v0)
+    v65 = icmp_imm eq v64, -2
+    brif v65, block12, block13(v64)
+
+block13(v1: i64):
+    v66 = icmp_imm ugt v1, 0xffff_ffff
+    brif v66, block11, block26
+
+block26:
+    v67 = ireduce.i32 v1
+    br_table v67, block11, [block1, block2, block3, block4, block5, block6, block7, block8]
+
+block10:
+    v68 = iconst.i64 1
+    return v68  ; v68 = 1
+
+block11:
+    v69 = iconst.i64 0
+    return v69  ; v69 = 0
+
+block12:
+    v70 = iconst.i64 2
+    return v70  ; v70 = 2
+}
+

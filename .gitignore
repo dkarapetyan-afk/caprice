@@ -1,0 +1,8 @@
+**/target/
+.build/
+**/__pycache__/
+**/.venv*/
+**/pcre2-build/
+*.tmp
+*.swp
+*.log
