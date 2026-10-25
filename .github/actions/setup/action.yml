@@ -1,0 +1,38 @@
+name: Setup Caprice
+description: Install Rust 1.99.1, cache the build, and build bundled PCRE2 10.49 when needed.
+runs:
+  using: composite
+  steps:
+    # Keep this toolchain in step with rust-toolchain.toml.
+    - name: Install Rust 1.99.1
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+      with:
+        toolchain: "1.99.1"
+        components: clippy, rustfmt
+
+    - name: Cache Cargo build outputs
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: project
+        shared-key: caprice-1.99.1
+
+    - name: Install system build packages
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential pkg-config python3 perl tar bzip2 patchelf
+
+    - name: Restore the PCRE2 10.49 install prefix
+      id: pcre
+      uses: actions/cache@v6
+      with:
+        path: .build/pcre2/install
+        key: pcre2-10.49-${{ hashFiles('third_party/pcre2/pcre2-10.49.tar.bz2', 'project/scripts/build_pcre2_10_49.sh', 'project/scripts/build_pcre2_local.sh') }}
+
+    - name: Build bundled PCRE2 10.49
+      if: steps.pcre.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        export CAPRICE_BUILD_JOBS="$(nproc)"
+        bash project/scripts/build_pcre2_local.sh

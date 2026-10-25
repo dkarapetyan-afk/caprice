@@ -1,0 +1,77 @@
+   Compiling caprice v0.3.0 (/workspace/scratch/e1e96430873e/caprice-next)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.49s
+     Running unittests src/lib.rs (target/release/deps/caprice-3b3f1d07f19d6c25)
+
+running 1 test
+lowered_expression_comparisons=51200
+test fast_expr::tests::lowered_expressions_preserve_strict_errors_and_byte_values ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/allocations.rs (target/release/deps/allocations-48770d2a8cbea14d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/benchmark.rs (target/release/deps/benchmark-cba656b1b5c5a574)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/deps/caprice-17aa4ea9e02922dc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/next_semantics.rs (target/release/deps/next_semantics-9c096ebe4e5a0502)
+
+running 6 tests
+test length_bounds_do_not_hide_mandatory_expression_limits ... ok
+test cache_keys_lru_and_native_lifetimes ... ok
+test fused_capture_runs_preserve_restoration_and_all_byte_classes ... ok
+prefix_pattern_input_cases=9583
+test prefix_factoring_retains_priority_and_capture_side_effects ... ok
+test stable_capture_slots_restore_through_fallback_and_reuse ... ok
+affine_pattern_input_cases=62496
+test affine_lengths_and_guards_preserve_captures ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/performance_semantics.rs (target/release/deps/performance_semantics-b064e5f8608414e7)
+
+running 4 tests
+test necessary_literal_rejects_but_does_not_decide_surviving_searches ... ok
+test native_and_vm_have_identical_residual_budgets ... ok
+native_boundary_cases=11056
+test native_bytes_lengths_and_class_tables ... ok
+range_trail_reuse_comparisons=54684
+test ranges_capture_trails_and_scratch_reuse ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/semantics.rs (target/release/deps/semantics-09e97745ed02471c)
+
+running 9 tests
+test syntax_and_type_rejections ... ok
+test bounded_repeat_does_not_enumerate_duplicate_counts ... ok
+test parameters_are_literal_and_specialization_agrees ... ok
+test budget_is_a_separate_outcome ... ok
+test missing_is_not_empty_and_application_is_strict ... ok
+test typed_lambdas_and_interpolation ... ok
+test captures_backrefs_and_rollback ... ok
+exhaustive_extended_cases=15624
+test exhaustive_dynamic_specialization_and_jit ... ok
+exhaustive_shared_cases=20767
+test exhaustive_differential_capture_semantics ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests caprice
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

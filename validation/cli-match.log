@@ -1,0 +1,16 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.03s
+     Running `target/release/caprice jit '(?<x>[a-z]+)-\k<x>' abc-abc`
+{
+  "captures": {
+    "x": {
+      "bytes": [
+        97,
+        98,
+        99
+      ],
+      "end": 3,
+      "start": 0
+    }
+  },
+  "status": "match"
+}

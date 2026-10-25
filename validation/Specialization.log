@@ -1,0 +1,4 @@
+'Caprice.specialization_sound' depends on axioms: [propext, Quot.sound]
+'Caprice.staged_specialization' depends on axioms: [propext, Quot.sound]
+'Caprice.guard_preservation' depends on axioms: [propext, Quot.sound]
+'Caprice.missing_argument_is_strict' depends on axioms: [propext]

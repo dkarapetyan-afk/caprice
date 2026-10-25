@@ -1,0 +1,30 @@
+[package]
+name = "caprice"
+version = "0.2.0"
+edition = "2021"
+description = "Capture-aware partial evaluation and native byte-operation JIT performance experiment"
+publish = false
+
+[dependencies]
+cranelift-codegen = "=0.125.3"
+cranelift-frontend = "=0.125.3"
+cranelift-jit = "=0.125.3"
+cranelift-module = "=0.125.3"
+regex = "=1.12.2"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "caprice"
+path = "src/main.rs"
+
+[[bin]]
+name = "benchmark"
+path = "src/benchmark.rs"
+
+[[bin]]
+name = "allocations"
+path = "src/allocations.rs"

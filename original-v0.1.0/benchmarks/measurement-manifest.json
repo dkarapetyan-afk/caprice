@@ -1,0 +1,38 @@
+{
+  "source_sha256": {
+    "Cargo.toml": "f9f981d294ed52e0203dc52388268cf76049cd24750b723163d3486c17f1c3f4",
+    "Cargo.lock": "d703c255f110484888e53e923a561cdced601bcba66b2817b310b816655c6c64",
+    "src/baseline.rs": "e08974c479f3463cd32beb30889ea4470558ed7a30f74e4ad74aac6a17f61cf0",
+    "src/benchmark.rs": "6cba1a8c86f39e6e1bf87cc0b8abfd198cfd0d971ffb4368b8838b5a3bbc7d45",
+    "src/expr.rs": "62d593b384399d6c98b5973201ee7e37e51b4af987a3d29a4ff9ab61a2148589",
+    "src/jit.rs": "d6b1e64b08632e04917e6d79b4fe52ff22f964d5bd67f1957140e4f3b9064aea",
+    "src/lib.rs": "ea3d19c372892b286a5cedd03782c46f95d953945657ceb1124adbc969477c5e",
+    "src/main.rs": "57c75e3e736fa0643d381300c82219d772b4d9753c39128f59efebcc5d8d98de",
+    "src/pattern.rs": "851f7c370f0b82080b11926ff8695982a8cd47d4c9f54196d0c684511cf2295c"
+  },
+  "benchmark_binary_sha256": "c2f19e07dc0ed2a9efb2dc3804b280a96e3a62c0f6f68a22cf2898d1acac8bf3",
+  "logical_cpu": 0,
+  "processes": 3,
+  "seeds": [
+    20261024,
+    20261025,
+    20261026
+  ],
+  "result_sha256": {
+    "python1-compile.csv": "5ef5cd0623ff6c38d0085c9ff4eb2357950b67bb0ae59799011cbb2088ea1782",
+    "python1-match.csv": "83283312c6eb4237082b5a38538871e1e899e9c130bb5fc737f887ea52147aa1",
+    "python2-compile.csv": "555e5768402e83ff389956e985d003423949379e820b7403da783d3b9e71aff4",
+    "python2-match.csv": "4eaa13fadfccaf82a390b55f031a166def7b134e1355b8c7e2dd74e682ad8a51",
+    "python3-compile.csv": "e6c08a611f20fb48dbca30d8449fb5b2c5eb8cac8b158257860eacb09b202239",
+    "python3-match.csv": "a4d0ed24c4f22401e1eeecc448a90476a730627f40b08659408eaae1a69d3f4f",
+    "run1-compile.csv": "cef28994ad9a53e367cd5af06900b7baf025650f4324b85d06c9c6e473b85bff",
+    "run1-match.csv": "324c48a10afd3533d5a70ad0fc75034f79c8e44ed1dc8d293f725cc6a4d9f583",
+    "run1-stress.csv": "043fbe741f9ae6ddaab405d7dfde65a2985f5ef560a6e1afc484b037d02f6ae0",
+    "run2-compile.csv": "1308ed1dd9dc17c92ef94a1be7bc370a78d12ff96a4035ee9c68f0df2b286503",
+    "run2-match.csv": "1e41ab059ce664260099b869660f6e6ed154f8165dbd08f81844e4e0ac50525c",
+    "run2-stress.csv": "fb21eac0721e86d8907c5edf992c3292b2d33c1a02c2c9186edf46bdd350f28d",
+    "run3-compile.csv": "7bc0f71c41dfa84d02441c0e9a45ded58df77289ff0e2c19434f8f199c6a803e",
+    "run3-match.csv": "7e16b4f7ce33d589bbb96bcf3bb3e26ec93455297720b93e5387f5f8a0f01135",
+    "run3-stress.csv": "855e65b5b8b9e34837a5fd6c1da1ae08d897f3848fa43907bda0c369e5667ee0"
+  }
+}

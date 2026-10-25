@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Anonymous author" />
+  <meta name="dcterms.date" content="2026-10-24" />
+  <title>Caprice: Higher-Categorical Semantics of Capture-Aware Partial Evaluation and JIT Matching</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="paper.css" />
+  
+  
+  
+  
+  
+  
+  
+  
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script
+  src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"
+  type="text/javascript"></script>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Caprice: Higher-Categorical Semantics of Capture-Aware
+Partial Evaluation and JIT Matching</h1>
+<p class="author">Anonymous author</p>
+<p class="date">October 24, 2026</p>
+</header>
+<h2 id="abstract">Abstract</h2>
+<p>We present a byte-oriented pattern language combining named captures,
+backreferences, literal interpolation, and fully applied typed lambdas
+over a small total string language. Its semantics distinguishes
+acceptance, capture observations, ordered matching witnesses, and
+resource exhaustion. Matching is modeled by ordered state
+transformations and witness correspondences in a presheaf infinity-topos
+of static-information worlds. A localization of certified rewrites
+records optimization paths without identifying observational equivalence
+with execution cost. We prove expression specialization, ordered-match
+preservation, and a conditional simulation theorem for native
+control-flow compilation. A Lean 4 kernel model checks specialization
+and strictness results. A Rust implementation includes a parser,
+backtracking VM, partial evaluator, and Cranelift JIT. Reproducible
+experiments compare three implementation modes with PCRE2, PCRE2 JIT,
+Rust regex, and CPython re. Across 11 synthetic workloads,
+specialization improves median matching latency by 1.30 to 22.02 times
+over the raw VM (2.89 times geometric mean), while the helper-based JIT
+is slower than the specialized VM on every measured median. These
+results establish a working research artifact and identify remaining
+engineering costs; they do not establish universal superiority over
+existing engines.</p>
+<p><strong>Keywords:</strong> backreferences; partial evaluation; typed
+interpolation; capture semantics; presheaf infinity-topos; native
+compilation; reproducible benchmarking.</p>
+<h2 id="problem-and-contribution">1. Problem and contribution</h2>
+<p>A captured string is useful both as data to be compared with a later
+substring and as an argument to an acceptance predicate. For example, an
+identifier may be followed by its ASCII uppercase rendering, while a
+typed predicate restricts the identifier’s length. A general-purpose
+host-language callback can express this behavior, but leaves the
+embedded language, effects, and specialization boundary unspecified.
+Caprice instead provides a small explicit calculus and a Rust
+implementation.</p>
+<p>The contribution is a combination of four artifacts: a precise
+pattern language; a higher-categorical organization of its semantics and
+certified transformations; a tested partial evaluator and native
+control-flow compiler; and measured comparisons with existing engines.
+The paper does not claim that backreferences, callouts, partial
+evaluation, or regex JIT compilation are new. PCRE2 already offers
+callouts and JIT [3,4]; the distinction here is the explicitly typed,
+total expression fragment and the treatment of optimization correctness,
+witness structure, and costs in one specification.</p>
+<p>Backreferences extend expressive power beyond regular languages.
+Their general matching problem is NP-complete when the pattern is part
+of the input; restricted classes admit better algorithms [2].
+Specializing a pattern does not remove that general boundary. Rust regex
+deliberately omits backreferences and documents an <span
+class="math inline">\(O(mn)\)</span> worst-case search bound, where
+<span class="math inline">\(m\)</span> measures the regex and <span
+class="math inline">\(n\)</span> the subject [5]. We therefore mark
+unsupported comparisons, rather than assigning regular-only engines
+incorrect substitutes for backreference matching.</p>
+<h2 id="surface-language-and-types">2. Surface language and types</h2>
+<p>Let <span class="math inline">\(\Sigma=\{0,\ldots,255\}\)</span> and
+<span class="math inline">\(\mathrm{Str}=\Sigma^*\)</span>. A match
+consumes the entire input. The public syntax supports literal bytes,
+classes, dot excluding LF, concatenation, left-priority alternation,
+named captures, named backreferences, greedy or lazy bounded/unbounded
+repetition, and absolute start/end assertions. Plain capturing
+parentheses are deliberately rejected; use
+<code>(?&lt;name&gt;...)</code> or <code>(?:...)</code>. Numeric
+backreferences, lookaround, Unicode character semantics, recursive
+patterns, search offsets, and replacement APIs are outside version
+0.1.</p>
+<p>The two extensions are:</p>
+<pre class="text"><code>${e}       evaluate e : Str and consume exactly its resulting bytes
+(?{e})     evaluate e : Bool; retain this branch exactly when true</code></pre>
+<p>Interpolation is literal matching, never reparsing the result as
+regex source. For instance, the static value <code>.*</code> consumes a
+dot and an asterisk. Expressions use parenthesized operator application;
+string tokens use JSON string syntax. There is no implicit coercion,
+implicit capture lookup, host <code>eval</code>, recursion, I/O, or
+mutation. The core grammar is:</p>
+<pre class="text"><code>T ::= Str | Nat | Bool
+e ::= &quot;JSON string&quot; | unsigned-integer | true | false | x
+    | (cap name) | (param name) | (op e ... e)
+    | (call (lambda (x T) e) e)</code></pre>
+<p>Lambdas are first-order and syntactically fully applied. They can
+nest and shadow variables, but cannot be stored or passed as function
+values. Static parameters have type <code>Str</code>; every referenced
+parameter must be supplied before compilation. A capture name must
+already have been declared, but need not have participated in the
+current branch. The operators are:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Operators</th>
+<th style="text-align: left;">Signature and meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>lower</code>, <code>upper</code>,
+<code>trim</code></td>
+<td style="text-align: left;"><span
+class="math inline">\(\mathrm{Str}\to\mathrm{Str}\)</span>; ASCII case
+conversion / ASCII whitespace trimming</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>concat</code></td>
+<td style="text-align: left;"><span
+class="math inline">\(\mathrm{Str}^2\to\mathrm{Str}\)</span>;
+concatenation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>slice</code></td>
+<td style="text-align: left;"><span
+class="math inline">\(\mathrm{Str}\times\mathrm{Nat}^2\to\mathrm{Str}\)</span>;
+half-open byte slice, endpoints clamped</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>len</code></td>
+<td style="text-align: left;"><span
+class="math inline">\(\mathrm{Str}\to\mathrm{Nat}\)</span>; byte
+length</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>eq</code></td>
+<td style="text-align: left;"><span class="math inline">\(T\times
+T\to\mathrm{Bool}\)</span> for a common base type <span
+class="math inline">\(T\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>contains</code>,
+<code>starts</code>, <code>ends</code></td>
+<td style="text-align: left;"><span
+class="math inline">\(\mathrm{Str}^2\to\mathrm{Bool}\)</span>; byte
+predicates</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>lt</code>, <code>le</code></td>
+<td style="text-align: left;"><span
+class="math inline">\(\mathrm{Nat}^2\to\mathrm{Bool}\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>and</code>, <code>or</code>,
+<code>not</code></td>
+<td style="text-align: left;">Boolean operators; operands evaluated
+strictly</td>
+</tr>
+</tbody>
+</table>
+<p>Here <code>slice(s,a,b)</code> means <span
+class="math inline">\(s[a&#39;:b&#39;]\)</span>, with <span
+class="math inline">\(a&#39;=\min(a,|s|)\)</span> and <span
+class="math inline">\(b&#39;=\max(a&#39;,\min(b,|s|))\)</span>. An empty
+substring is contained in every string. The implementation parses
+natural literals as <code>usize</code>; its lengths are
+machine-representable. The abstract model uses natural numbers. It
+contains no arithmetic operation that could overflow.</p>
+<p>More precisely, <code>trim</code> removes bytes 9, 10, 12, 13, and
+32, following Rust’s ASCII-whitespace predicate; the pattern shorthand
+<code>\s</code> additionally includes byte 11. Case conversion changes
+ASCII letters only. Arbitrary other bytes are preserved.</p>
+<p>For example, the following is one pattern, written on separate lines
+only for readability (the parser does not ignore whitespace):</p>
+<pre class="text"><code>(?&lt;x&gt;[A-Za-z]+):${(upper (cap x))}
+(?{(call (lambda (s Str) (le (len s) 5)) (cap x))})</code></pre>
+<p>It accepts <code>Abc:ABC</code>, rejects <code>Abc:abc</code>, and
+rejects an identifier longer than five bytes.</p>
+<p><strong>Definition 2.1 (partial capture environment).</strong> For
+input <span class="math inline">\(w\)</span> of length <span
+class="math inline">\(n\)</span> and a finite set <span
+class="math inline">\(K\)</span> of capture names, let <span
+class="math inline">\(\mathrm{Span}_n=\{(a,b):0\leq a\leq b\leq
+n\}\)</span> and <span
+class="math inline">\(\gamma:K\to\mathrm{Span}_n+\{\bot\}\)</span>. A
+participating empty capture is <span
+class="math inline">\((a,a)\)</span>; it is distinct from <span
+class="math inline">\(\bot\)</span>. Reading an unset or currently open
+capture yields <code>None</code>.</p>
+<p><strong>Definition 2.2 (strict expression evaluation).</strong> A
+well-typed expression has interpretation</p>
+<p><span class="math display">\[
+\mathopen{[\![}e:T\mathclose{]\!]}_{w,\gamma,\rho,\eta}\in\operatorname{Option}(\mathopen{[\![}T\mathclose{]\!]}),
+\]</span></p>
+<p>where <span class="math inline">\(\rho\)</span> supplies static
+parameters and <span class="math inline">\(\eta\)</span> supplies
+lambda-bound variables. Constants evaluate to <code>Some</code>; a
+defined capture evaluates to <span
+class="math inline">\(w[a:b]\)</span>. Primitive operators lift their
+total functions by strict left-to-right <code>Option</code> sequencing.
+Lambda application first evaluates its argument and, if defined,
+evaluates the body in the extended lexical environment. An undefined
+argument is not discarded even when its variable is unused. A guard
+accepts only <code>Some(true)</code>; interpolation consumes only a
+defined string.</p>
+<p><strong>Lemma 2.3 (termination and type preservation).</strong> Every
+well-typed expression terminates with either a value of its specified
+type or <code>None</code>.</p>
+<p><em>Proof.</em> The source AST is finite, primitive functions
+terminate on finite byte strings, and application evaluates two
+structurally nested expressions without recursion. Induction on the
+typed AST gives the claim; lexical environments provide values at the
+declared types. This lemma concerns mathematical evaluation, not
+unlimited physical memory. <span
+class="math inline">\(\square\)</span></p>
+<h2 id="ordered-matching-and-backtracking">3. Ordered matching and
+backtracking</h2>
+<p>For fixed <span class="math inline">\(w\)</span>, a state is <span
+class="math inline">\(s=(i,\gamma)\)</span> with <span
+class="math inline">\(0\leq i\leq |w|\)</span>. Interpret a pattern as
+an ordered list of successor states, <span
+class="math inline">\(R_p:S_w\to\operatorname{List}(S_w)\)</span>. Empty
+matching is the singleton identity and failure is the empty list.
+Alternation concatenates lists in source order; sequence uses list
+bind:</p>
+<p><span class="math display">\[
+R_{p;q}(s)=\operatorname{concat}_{t\in R_p(s)}R_q(t),\qquad
+R_{p\mid q}(s)=R_p(s)\mathbin{+\!+}R_q(s).
+\]</span></p>
+<p>A literal consumes its own prefix or fails. A backreference consumes
+<span class="math inline">\(w[a:b]\)</span> when its capture is defined.
+Capture <span class="math inline">\(k\)</span> records the starting
+position, clears the old binding while evaluating its body, and writes
+the resulting span on each successful branch. Other capture bindings are
+retained. Each alternative restores its saved state; failed branches
+cannot leak capture updates.</p>
+<p>Repetition follows the recursive prioritized choice used by the VM,
+not an unordered union over lengths. A greedy optional continuation
+tries the body and another iteration before the empty exit; lazy
+repetition tries that exit first. Bounded repetition decreases its
+remaining count. Unbounded repetition is admitted only when a
+conservative nullability analysis proves the body consumes a byte on
+every success. In particular, a backreference or dynamic interpolation
+is conservatively treated as possibly empty even if more detailed
+analysis could prove otherwise.</p>
+<p><strong>Definition 3.1 (observations).</strong> Starting from
+position zero and all captures unset, filter the successor list to
+states at position <span class="math inline">\(|w|\)</span>. Write <span
+class="math inline">\(\mathcal O(p,\rho,w)\)</span> for the resulting
+ordered list of capture environments, retaining multiplicity. Boolean
+acceptance tests nonemptiness; the implementation returns the first
+environment. Complete ordered observations are stronger than either
+returned-first-capture equivalence or Boolean language equivalence.</p>
+<p><strong>Proposition 3.2 (finite reference search).</strong> Every
+accepted source pattern has a finite search tree on each finite
+input.</p>
+<p><em>Proof.</em> Bounded repetitions expand into finite control flow.
+Every cycle of an unbounded repetition contains a successful consuming
+body; a successful path can traverse such cycles only finitely often
+before exhausting the input. The remaining acyclic paths have finite
+branching. False predicates and unset reads terminate individual
+branches. <span class="math inline">\(\square\)</span></p>
+<p><strong>Counterexample 3.3 (postfiltering the first match is
+unsound).</strong> Consider</p>
+<pre class="text"><code>(?&lt;x&gt;a|aa)a?(?{(eq (cap x) &quot;aa&quot;)})</code></pre>
+<p>on <code>aa</code>. The first ordinary full match captures
+<code>a</code>; its guard fails. Backtracking finds the capture
+<code>aa</code>, whose guard succeeds. Calling an old engine once and
+postfiltering its first match would reject. Baseline postprocessors in
+Section 8 are therefore used only on patterns whose full-match captures
+are unique. PCRE2 callouts could support a broader internal-predicate
+comparison [4], but such a baseline is not implemented here.</p>
+<h2 id="higher-categorical-organization">4. Higher-categorical
+organization</h2>
+<p>Fix a finite static-parameter signature <span
+class="math inline">\(M\)</span>. A <em>world</em> <span
+class="math inline">\(\sigma\)</span> assigns byte strings to a subset
+of <span class="math inline">\(M\)</span>. Define a small category <span
+class="math inline">\(W\)</span> with a unique arrow <span
+class="math inline">\(\tau\to\sigma\)</span> when <span
+class="math inline">\(\tau\)</span> extends <span
+class="math inline">\(\sigma\)</span>. Let <span
+class="math inline">\(\Omega_\sigma\)</span> be the set of total
+assignments extending <span class="math inline">\(\sigma\)</span>. The
+inclusion <span
+class="math inline">\(\Omega_\tau\hookrightarrow\Omega_\sigma\)</span>
+induces restriction of behavior functions. Consequently</p>
+<p><span class="math display">\[
+\mathcal E=\operatorname{Fun}(W^{\mathrm{op}},\mathcal S),\qquad
+B(\sigma)=\operatorname{Set}\bigl(\Omega_\sigma\times\Sigma^*,
+\operatorname{List}(\mathrm{CapResult})\bigr)
+\]</span></p>
+<p>define a presheaf infinity-topos and a discrete-valued behavior
+object in it. Capture results include their input-compatible spans. No
+extra Grothendieck topology or descent assumption is imposed. The
+assertion that <span class="math inline">\(\mathcal E\)</span> is an
+infinity-topos is the standard presheaf construction [6], not a claim
+that a regex automaton or a program-localization category is itself a
+topos.</p>
+<p><strong>Definition 4.1 (matching witnesses).</strong> Let <span
+class="math inline">\(D_p\)</span> be the family of finite derivations
+of successful transitions. With source and target maps it determines a
+correspondence</p>
+<p><span class="math display">\[
+S\xleftarrow{\;s\;}D_p\xrightarrow{\;t\;}S. \]</span></p>
+<p>Here the subject and total parameters are carried unchanged in the
+state family. All these objects can be regarded as presheaves over <span
+class="math inline">\(W\)</span> by restricting the allowed completions.
+Concatenation composes correspondences through a homotopy pullback;
+alternatives use tagged coproducts. In the present implementation the
+fibers are sets, so these homotopy pullbacks reduce to ordinary
+pullbacks. The higher formulation permits structured witness spaces
+without changing the base construction. Correspondence calculi and
+higher categories of spans provide the relevant general framework
+[7].</p>
+<p>The hom infinity-category <span class="math inline">\(\mathcal
+E_{/X\times Y}\)</span>, with pullback composition, also gives a
+calculus of spans with maps of spans as refinements. A refinement need
+not be an equivalence of witness objects. Coherent associativity comes
+from the universal property of pullbacks. Execution priority remains
+additional list/branch-order data; plain correspondences do not encode
+which result a greedy engine returns first.</p>
+<p><strong>Proposition 4.2 (levels of observation).</strong> The image
+of <span class="math inline">\(D_p\to S\times S\)</span> is the
+successful transition relation; its fibers are the <span
+class="math inline">\((-1)\)</span>-truncations of witness fibers.
+Further existential projection to complete input matches gives Boolean
+acceptance. Neither construction in general recovers ordered capture
+results.</p>
+<p><em>Proof.</em> Image factorization in an infinity-topos is fiberwise
+propositional truncation. An inhabited derivation fiber records
+existence of the corresponding transition. Existential projection
+forgets the selected capture state as well. Reversing the alternatives
+in <code>(?&lt;x&gt;a|aa)a?</code> leaves acceptance of <code>aa</code>
+unchanged but changes the first capture, establishing the final
+assertion. <span class="math inline">\(\square\)</span></p>
+<p>For each world, let <span class="math inline">\(\mathcal
+R_\sigma\)</span> be the small category presented by finite programs,
+selected certified rewrite steps, and declared equations between rewrite
+paths. Certificates assert equality in <span
+class="math inline">\(B(\sigma)\)</span>. Restriction of a certificate
+to fewer completions defines its image at an extending world. Let</p>
+<p><span class="math display">\[ C(\sigma)=\mathcal
+R_\sigma[\operatorname{Mor}(\mathcal R_\sigma)^{-1}] \]</span></p>
+<p>denote its infinity-groupoid completion, retaining the nerve’s
+homotopy information rather than replacing it by a set of connected
+components. Functorial localization makes <span
+class="math inline">\(C\)</span> an object of <span
+class="math inline">\(\mathcal E\)</span>. Sound rewrite generators
+induce a natural observation map <span
+class="math inline">\(\operatorname{obs}:C\to B\)</span>: the map
+factors through localization because every generating rewrite becomes
+equality of behaviors. Declared coherence equations must themselves be
+justified; they are not inferred merely from matching test outputs. For
+example, disjoint constant-folding rewrites commute because they replace
+different AST subtrees.</p>
+<p><strong>Definition 4.3 (implementation fiber).</strong> For the
+behavior section <span class="math inline">\(b_p:1\to B\)</span> of a
+program, define</p>
+<p><span class="math display">\[ \mathcal F_p=1\mathbin{\times}_{B} C.
+\]</span></p>
+<p>Points describe compatible implementations; paths describe certified
+rewrite equivalences, and higher paths describe the coherences retained
+by the chosen presentation. No nontrivial higher homotopy group is
+asserted or computed for this prototype. The construction specifies
+where such information belongs. It distinguishes a proof-bearing
+optimization history from the mere assertion that two programs accept
+the same language.</p>
+<h2 id="partial-evaluation-and-preservation">5. Partial evaluation and
+preservation</h2>
+<p>The implementation specializes against the pattern syntax and
+supplied static parameters. It replaces parameter reads with literals,
+folds closed primitive applications, beta-reduces fully applied lambdas
+with static arguments, removes constant guards, changes constant
+interpolation into literal matching, fuses adjacent literals, and
+replaces class-only repeats with a scanner plus ordered backtracking
+alternatives. Dynamic lambda arguments remain strict. Static folding is
+capped at 1 MiB for an individual computed string; a larger expression
+remains residual.</p>
+<p><strong>Theorem 5.1 (expression specialization).</strong> Let <span
+class="math inline">\(\rho\)</span> extend <span
+class="math inline">\(\sigma\)</span>. For every well-typed expression
+and capture environment,</p>
+<p><span class="math display">\[
+\mathopen{[\![}\operatorname{pe}_\sigma(e)\mathclose{]\!]}_{w,\gamma,\rho,\eta}
+=\mathopen{[\![}e\mathclose{]\!]}_{w,\gamma,\rho,\eta}. \]</span></p>
+<p><em>Proof.</em> Induct on the typed expression. Known parameter
+replacement is sound because the completion agrees with <span
+class="math inline">\(\sigma\)</span>. Closed primitive folding applies
+the same total function to the same values. If the specialized lambda
+argument is a value, lexical value substitution yields the body
+evaluation. Otherwise the residual application retains argument
+evaluation before the body, including <code>None</code>. The inductive
+hypotheses cover remaining subexpressions. Refusing an oversized fold
+simply retains an expression whose recursive specializations are sound.
+<span class="math inline">\(\square\)</span></p>
+<p>The attached <code>formal/Specialization.lean</code> checks the
+analogous theorem for an intrinsically typed kernel with arbitrary total
+unary/binary primitives, captures, partially known parameters, and
+strict fully applied lambdas represented by higher-order abstract
+syntax. It also proves semantic agreement of successive specialization
+stages and guard preservation. The checked artifact uses Lean 4.19.0
+[12] with the standard logical axioms reported in its validation log; it
+contains no <code>sorry</code> or added axiom. It does
+<strong>not</strong> verify extraction to Rust, the parser, bounded
+allocation, the regex VM, or Cranelift.</p>
+<p><strong>Lemma 5.2 (strictness is essential).</strong> In general,
+<code>(call (lambda (x Str) true) (cap missing))</code> cannot
+specialize to <code>true</code>.</p>
+<p><em>Proof.</em> The former evaluates to <code>None</code> when the
+capture is unset; the latter evaluates to <code>Some(true)</code>. This
+law is also checked in Lean and tested in all three engine modes. <span
+class="math inline">\(\square\)</span></p>
+<p><strong>Theorem 5.3 (ordered-match preservation).</strong> In the
+unbounded-resource semantics, specialization preserves <span
+class="math inline">\(\mathcal O(p,\rho,w)\)</span>, hence both
+acceptance and the first returned capture environment.</p>
+<p><em>Proof.</em> Theorem 5.1 preserves each guard and interpolated
+literal. Removing a true guard or combining successive literals removes
+deterministic administrative steps and preserves ordered successors.
+Class-repeat fusion enumerates exactly the same lengths in the same
+priority order, and the fused body changes no capture. Sequence and
+alternation preserve equality by list bind and concatenation. Bounded
+repetition follows by induction on its bound; consuming unbounded
+repetition follows by induction on remaining input length. These
+arguments produce a correspondence of successful observations, without
+requiring arbitrary optimization histories to have identical trace
+presentations. <span class="math inline">\(\square\)</span></p>
+<p>The compiler additionally moves an end-of-input assertion before a
+contiguous trailing suffix of zero-width guards. Both tests leave the
+state unchanged, so filtering by end position commutes with guard
+filtering. The observation is full matching, making this transformation
+sound even though it would require a different argument for substring
+search. Control-flow targets are relocated to preserve entry into the
+guard suffix. This optimization is included in the measured PE and JIT
+modes.</p>
+<p><strong>Proposition 5.4 (budgets are not preserved by PE).</strong>
+Equal unbounded observations do not imply equal outcomes under a fixed
+operational budget.</p>
+<p><em>Proof.</em> A raw sequence of <span
+class="math inline">\(k\)</span> one-byte literal instructions can
+require <span class="math inline">\(k\)</span> dispatches, while its
+fused literal uses one. Choose a dispatch budget between these values.
+One program may exhaust it while the other matches. Hoisting an end
+assertion may likewise avoid an expression allocation on a branch that
+cannot complete. <span class="math inline">\(\square\)</span></p>
+<h2 id="rust-vm-and-native-control-flow-compiler">6. Rust VM and native
+control-flow compiler</h2>
+<p>The parser produces a typed expression AST and pattern AST.
+Compilation emits instructions for literals, classes, capture start/end,
+backreferences, guards, interpolation, branching, jumps, assertions,
+acceptance, and failure. A backtracking frame stores a program counter,
+input position, and complete capture snapshot. Entering a capture
+invalidates its previous value until its end instruction. Snapshot
+restoration is the rollback invariant.</p>
+<p><code>raw</code> executes unspecialized bytecode. <code>pe</code>
+executes specialized bytecode. <code>jit</code> compiles that same
+specialized program to native code with Cranelift 0.125.3. Every
+instruction gets a native control-flow block; successful edges are
+compiled directly, while a dynamic backtracking target is selected
+through a compiled switch. The generated code calls checked Rust helpers
+for instruction effects, string operators, captures, and budgets. Thus
+this is a <strong>native control-flow JIT</strong>, not a native
+compiler for each string operator, a regex DFA generator, or a fully
+inlined tracing JIT. The runtime helper still dispatches on the opcode.
+This deliberate implementation boundary is important when interpreting
+performance.</p>
+<p><strong>Theorem 6.1 (conditional JIT simulation).</strong> Assume the
+native compiler and C ABI correctly implement the generated control-flow
+graph, the runtime helper implements the specified bytecode transition,
+and code/environment lifetimes are valid. The VM and JIT on the same
+residual program return the same capture result, failure, or budget
+exhaustion.</p>
+<p><em>Proof.</em> Relate a VM state at instruction <span
+class="math inline">\(j\)</span> to a native invocation at block <span
+class="math inline">\(j\)</span> with the same Rust runtime record. Both
+call the same instruction transition. Success follows the same
+statically determined edge; failure invokes the same frame-pop operation
+and reaches the corresponding block or terminal failure. Exhaustion
+returns immediately in both. Acceptance requires the same input end
+position and retains the same capture array. Induction on dispatches
+proves lockstep simulation. The theorem is conditional: the artifact
+does not contain a machine-checked proof of Cranelift, generated machine
+code, or Rust’s FFI implementation. <span
+class="math inline">\(\square\)</span></p>
+<p>Default matching limits are one million dispatches, 100,000 pending
+frames, and 1 MiB per expression string. Source size is capped at 8,192
+bytes, capture count at 128, nesting at 128, repetition counts at 1,000,
+and expanded programs at 32,768 instructions. These are safeguards, not
+a proof of a fixed wall-clock bound or a global memory quota: one
+primitive may scan many bytes, and snapshots may be large. Exhaustion is
+a separate result, never silently converted to rejection. A production
+service would additionally need explicit total memory accounting, time
+cancellation, caching policies, and a hardened deployment boundary.</p>
+<h2 id="correctness-evidence">7. Correctness evidence</h2>
+<p>The final Rust release test run passes nine tests. An exhaustive
+suite covers 19 shared patterns on all 1,093 strings of length at most
+six over <code>ab-</code>: 20,767 pattern/input cases. It compares
+acceptance and every capture span with PCRE2 and compares all three
+Caprice modes. A second suite covers four extended patterns on all 3,906
+strings of length at most five over <code>abAB-</code>: 15,624 cases
+comparing the three modes. These are 36,391 cases, not an exhaustive
+proof over all patterns. Separate regressions cover lexical shadowing,
+unset/empty captures, rollback, type errors, literal parameter
+injection, budget outcomes, and correct bounded-repeat compilation.</p>
+<p>Benchmark preflight separately validates every timed
+engine/workload/input combination against explicit expected answers.
+Each timed sample checks its aggregate accepted count. Rust formatting
+and Clippy with warnings denied pass. Lean logs and dependency versions
+are included. Exhaustive bounded tests, a small checked model, and
+conditional mathematical proofs provide different kinds of evidence and
+should not be conflated.</p>
+<h2 id="experimental-protocol">8. Experimental protocol</h2>
+<p>The measurements were produced in an x86-64 Linux container on an AMD
+EPYC 9V74 host, pinned to logical CPU 0. The visible CPU frequency was
+approximately 2.60 GHz; frequency and other host tenants were not
+controlled. The build used Rust 1.99.1 with
+<code>cargo build --release --locked</code>, default CPU targeting, and
+no extra <code>RUSTFLAGS</code>. Baselines were PCRE2 10.42 without JIT,
+PCRE2 10.42 with successful JIT compilation, Rust regex 1.12.2, and
+CPython 3.12.14. Versions are the tested installations, not a claim to
+use every engine’s latest release. The primary compiler packages are
+Cranelift 0.125.3; <code>Cargo.lock</code> records all transitive
+versions.</p>
+<p>There are 11 deterministic synthetic workloads, each with 256 inputs
+and half accepted. The corpus generator is included. Full byte matching,
+ASCII transforms, no locale dependence, and absolute end semantics are
+aligned. Both backreference workloads are omitted from Rust regex.
+Static interpolation is compiled into the baseline regex. Three dynamic
+workloads use a baseline regex plus a host predicate on uniquely
+determined full-match captures: ASCII case equality, uppercase-pair
+equality, or length at most 16. Their timings include the predicate.
+This translation is justified only by uniqueness for these selected
+workloads; Counterexample 3.3 prohibits treating it as a general
+implementation of Caprice guards.</p>
+<p>Each of three fresh process runs builds every engine/pattern seven
+times for compilation timing, validates all inputs, performs warm-up
+passes, and calibrates a batch toward 20 ms. Nine timed batches per job
+are interleaved in deterministic shuffled order. Thus each table entry
+aggregates 27 matching samples and 21 compile samples. The primary
+statistic is the median per-input latency; raw samples and inclusive
+interquartile ranges are supplied. CPython runs separately and includes
+Python loop and call overhead, whereas the other timed loops are Rust.
+Boolean queries use each engine’s normal API: PCRE2 reuses its match
+data, while Caprice allocates capture state per invocation. These API
+differences are part of this implementation comparison, not a controlled
+comparison of identical allocation strategies.</p>
+<p>Compilation is excluded from warm matching and measured separately.
+Cranelift function bytes and PCRE2 reported JIT bytes are recorded, but
+are not equated with total memory usage. The experiments do not measure
+production throughput, concurrent use, JIT cache eviction, energy, peak
+resident memory by engine, Unicode workloads, Ruby/Onigmo, or large
+real-world corpora. IQRs measure sample dispersion, not inferential
+confidence.</p>
+<h2 id="results-and-interpretation">9. Results and interpretation</h2>
+<p>The following values are median <strong>nanoseconds per full-match
+decision</strong>; lower is better. Host predicates are included where
+applicable. A dash means unsupported.</p>
+<table>
+<colgroup>
+<col style="width: 27%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Workload</th>
+<th style="text-align: right;">Raw</th>
+<th style="text-align: right;">PE</th>
+<th style="text-align: right;">JIT</th>
+<th style="text-align: right;">PCRE</th>
+<th style="text-align: right;">PCRE-JIT</th>
+<th style="text-align: right;">Rust</th>
+<th style="text-align: right;">Python</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Literal</td>
+<td style="text-align: right;">391.4</td>
+<td style="text-align: right;">17.8</td>
+<td style="text-align: right;">19.3</td>
+<td style="text-align: right;">156.4</td>
+<td style="text-align: right;">38.5</td>
+<td style="text-align: right;">117.5</td>
+<td style="text-align: right;">215.6</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Identifier</td>
+<td style="text-align: right;">611.8</td>
+<td style="text-align: right;">451.1</td>
+<td style="text-align: right;">480.9</td>
+<td style="text-align: right;">197.9</td>
+<td style="text-align: right;">48.8</td>
+<td style="text-align: right;">48.7</td>
+<td style="text-align: right;">211.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Fields</td>
+<td style="text-align: right;">827.5</td>
+<td style="text-align: right;">543.2</td>
+<td style="text-align: right;">597.6</td>
+<td style="text-align: right;">137.7</td>
+<td style="text-align: right;">41.7</td>
+<td style="text-align: right;">55.4</td>
+<td style="text-align: right;">247.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Alternation</td>
+<td style="text-align: right;">119.4</td>
+<td style="text-align: right;">78.9</td>
+<td style="text-align: right;">92.1</td>
+<td style="text-align: right;">87.0</td>
+<td style="text-align: right;">33.8</td>
+<td style="text-align: right;">33.0</td>
+<td style="text-align: right;">174.2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Backref short</td>
+<td style="text-align: right;">236.9</td>
+<td style="text-align: right;">163.0</td>
+<td style="text-align: right;">174.0</td>
+<td style="text-align: right;">79.2</td>
+<td style="text-align: right;">40.2</td>
+<td style="text-align: right;">-</td>
+<td style="text-align: right;">185.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Backref long</td>
+<td style="text-align: right;">4226.0</td>
+<td style="text-align: right;">3241.8</td>
+<td style="text-align: right;">3384.2</td>
+<td style="text-align: right;">192.5</td>
+<td style="text-align: right;">170.7</td>
+<td style="text-align: right;">-</td>
+<td style="text-align: right;">677.3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Static parameter</td>
+<td style="text-align: right;">252.9</td>
+<td style="text-align: right;">43.5</td>
+<td style="text-align: right;">48.8</td>
+<td style="text-align: right;">101.4</td>
+<td style="text-align: right;">34.5</td>
+<td style="text-align: right;">39.5</td>
+<td style="text-align: right;">187.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Lambda guard</td>
+<td style="text-align: right;">3875.4</td>
+<td style="text-align: right;">632.7</td>
+<td style="text-align: right;">677.1</td>
+<td style="text-align: right;">102.9</td>
+<td style="text-align: right;">56.9</td>
+<td style="text-align: right;">107.8</td>
+<td style="text-align: right;">273.0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Dynamic interpolation</td>
+<td style="text-align: right;">408.6</td>
+<td style="text-align: right;">312.9</td>
+<td style="text-align: right;">329.6</td>
+<td style="text-align: right;">155.0</td>
+<td style="text-align: right;">95.6</td>
+<td style="text-align: right;">158.4</td>
+<td style="text-align: right;">315.7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Length guard</td>
+<td style="text-align: right;">2681.7</td>
+<td style="text-align: right;">664.4</td>
+<td style="text-align: right;">714.8</td>
+<td style="text-align: right;">104.1</td>
+<td style="text-align: right;">55.4</td>
+<td style="text-align: right;">119.0</td>
+<td style="text-align: right;">247.7</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Constant lambda</td>
+<td style="text-align: right;">971.5</td>
+<td style="text-align: right;">201.2</td>
+<td style="text-align: right;">225.1</td>
+<td style="text-align: right;">151.8</td>
+<td style="text-align: right;">41.5</td>
+<td style="text-align: right;">51.8</td>
+<td style="text-align: right;">220.6</td>
+</tr>
+</tbody>
+</table>
+<p>PE reduces median latency on all 11 workloads: 1.30 to 22.02 times,
+with an unweighted geometric mean of 2.89 times across these workloads.
+The JIT is 4.4% to 16.6% slower than PE by the measured medians. PE
+beats PCRE2 JIT on the fixed-literal workload (17.8 versus 38.5 ns), but
+PCRE2 JIT is faster on the other ten. Thus the evidence supports partial
+evaluation within this prototype and rejects a general speed-superiority
+claim for its current JIT.</p>
+<figure>
+<img src="performance.png" style="width:100.0%"
+alt="Ratios of measured medians: specialization improves this corpus, while the native control-flow JIT adds overhead." />
+<figcaption aria-hidden="true">Ratios of measured medians:
+specialization improves this corpus, while the native control-flow JIT
+adds overhead.</figcaption>
+</figure>
+<p>Median <strong>microseconds to construct the engine</strong> are
+shown below, including parsing and, where selected, PE and JIT
+compilation. Baseline construction includes its translated regex but no
+dynamically compiled host callback; the small host predicate functions
+are already compiled into the benchmark executable.</p>
+<table>
+<colgroup>
+<col style="width: 27%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Workload</th>
+<th style="text-align: right;">Raw</th>
+<th style="text-align: right;">PE</th>
+<th style="text-align: right;">JIT</th>
+<th style="text-align: right;">PCRE</th>
+<th style="text-align: right;">PCRE-JIT</th>
+<th style="text-align: right;">Rust</th>
+<th style="text-align: right;">Python</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Literal</td>
+<td style="text-align: right;">4.0</td>
+<td style="text-align: right;">4.3</td>
+<td style="text-align: right;">186.7</td>
+<td style="text-align: right;">2.0</td>
+<td style="text-align: right;">5.0</td>
+<td style="text-align: right;">14.0</td>
+<td style="text-align: right;">38.3</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Identifier</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">0.8</td>
+<td style="text-align: right;">265.0</td>
+<td style="text-align: right;">0.9</td>
+<td style="text-align: right;">4.0</td>
+<td style="text-align: right;">28.2</td>
+<td style="text-align: right;">30.3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Fields</td>
+<td style="text-align: right;">0.9</td>
+<td style="text-align: right;">1.0</td>
+<td style="text-align: right;">338.9</td>
+<td style="text-align: right;">0.9</td>
+<td style="text-align: right;">5.4</td>
+<td style="text-align: right;">11.7</td>
+<td style="text-align: right;">30.4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Alternation</td>
+<td style="text-align: right;">2.1</td>
+<td style="text-align: right;">2.9</td>
+<td style="text-align: right;">445.9</td>
+<td style="text-align: right;">1.4</td>
+<td style="text-align: right;">5.2</td>
+<td style="text-align: right;">18.8</td>
+<td style="text-align: right;">39.1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Backref short</td>
+<td style="text-align: right;">1.0</td>
+<td style="text-align: right;">0.8</td>
+<td style="text-align: right;">267.8</td>
+<td style="text-align: right;">0.9</td>
+<td style="text-align: right;">4.8</td>
+<td style="text-align: right;">-</td>
+<td style="text-align: right;">21.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Backref long</td>
+<td style="text-align: right;">6.1</td>
+<td style="text-align: right;">1.1</td>
+<td style="text-align: right;">276.7</td>
+<td style="text-align: right;">1.0</td>
+<td style="text-align: right;">5.6</td>
+<td style="text-align: right;">-</td>
+<td style="text-align: right;">23.3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Static parameter</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">1.8</td>
+<td style="text-align: right;">266.0</td>
+<td style="text-align: right;">1.4</td>
+<td style="text-align: right;">4.4</td>
+<td style="text-align: right;">14.3</td>
+<td style="text-align: right;">30.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Lambda guard</td>
+<td style="text-align: right;">2.5</td>
+<td style="text-align: right;">2.8</td>
+<td style="text-align: right;">293.7</td>
+<td style="text-align: right;">0.7</td>
+<td style="text-align: right;">3.6</td>
+<td style="text-align: right;">9.3</td>
+<td style="text-align: right;">19.3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Dynamic interpolation</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">1.3</td>
+<td style="text-align: right;">273.4</td>
+<td style="text-align: right;">1.1</td>
+<td style="text-align: right;">5.5</td>
+<td style="text-align: right;">24.9</td>
+<td style="text-align: right;">29.6</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Length guard</td>
+<td style="text-align: right;">1.4</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">275.0</td>
+<td style="text-align: right;">0.7</td>
+<td style="text-align: right;">3.5</td>
+<td style="text-align: right;">8.7</td>
+<td style="text-align: right;">18.6</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Constant lambda</td>
+<td style="text-align: right;">3.3</td>
+<td style="text-align: right;">3.8</td>
+<td style="text-align: right;">179.0</td>
+<td style="text-align: right;">0.5</td>
+<td style="text-align: right;">2.8</td>
+<td style="text-align: right;">7.0</td>
+<td style="text-align: right;">12.6</td>
+</tr>
+</tbody>
+</table>
+<p>For compile cost <span class="math inline">\(C\)</span> and repeated
+match latency <span class="math inline">\(t\)</span>, total cost after
+<span class="math inline">\(N\)</span> uses is <span
+class="math inline">\(C+Nt\)</span>. Given alternatives <span
+class="math inline">\(A\)</span> and <span
+class="math inline">\(B\)</span>, when <span
+class="math inline">\(C_B&gt;C_A\)</span> and <span
+class="math inline">\(t_B&lt;t_A\)</span>, the break-even use count
+satisfies</p>
+<p><span class="math display">\[ N&gt;\frac{C_B-C_A}{t_A-t_B}.
+\]</span></p>
+<p>When <span class="math inline">\(B\)</span> has both higher compile
+cost and no lower matching latency, no positive break-even count follows
+from those measurements. For JIT versus PE, the measured median
+compilation and matching costs are both higher in all 11 workloads, so
+no positive break-even count is demonstrated. This is a property of
+measured implementations, not a theorem about all possible partial
+evaluators or native compilers.</p>
+<p>The helper-heavy JIT retains string allocation, capture copying,
+opcode dispatch inside helpers, and FFI transitions. Compiling the outer
+control-flow graph alone therefore does not guarantee an improvement.
+The literal and static-parameter results demonstrate effective
+specialization; the dynamic and capture-heavy workloads show the cost of
+the remaining runtime. Improvements to native primitive lowering or
+persistent capture snapshots require new measurements and proof
+obligations.</p>
+<p>The raw VM emits one instruction per literal byte. Its largest
+measured speedup specifically reflects removing that dispatch overhead;
+existing engines already perform their own literal optimizations. The
+reported PE effects include the complete specialization pipeline,
+including class-repeat fusion and end-check hoisting, rather than
+isolating constant folding alone.</p>
+<p>An additional adversarial probe uses <code>(?:a|aa)*b</code> on <span
+class="math inline">\(a^n\)</span> for <span
+class="math inline">\(n\in\{8,12,16,20,24,28\}\)</span>. All three
+Caprice modes reach the one-million-dispatch budget at lengths 24 and 28
+in each process run; the existing PCRE2 and Rust regex baselines reject
+without exhausting that budget or returning an error. This probe is a
+single cold decision per process and is reported separately from the
+warm benchmark; the regular baseline’s startup costs are visible. PCRE2
+can reject this particular family using its required-byte optimization.
+The result neither demonstrates that every backtracking engine is
+vulnerable on these inputs nor establishes a linear bound for
+Caprice.</p>
+<h2 id="cost-equivalence-and-limitations">10. Cost, equivalence, and
+limitations</h2>
+<p>Observational equivalence is symmetric; runtime improvement is not.
+Attach compilation cost and a workload-indexed latency function to the
+directed rewrite presentation before localization. If a rewrite is
+reversed after localization, its former compilation cost cannot simply
+become a negative time. Hence semantic localization intentionally
+forgets some operational information. A correct implementation fiber may
+contain both faster and slower realizers.</p>
+<p>The formal model uses finite byte strings and pure operators. The
+Rust program implements a deliberately small syntax and eager JIT
+construction; it has no hotness threshold, persistent code cache, SIMD
+lowering, regular-fragment DFA fallback, or proof-carrying machine code.
+The Lean proof covers a generic typed expression kernel, not the full
+regex semantics. The higher-categorical construction organizes
+certificates and observations; it is not evidence that the
+implementation computes homotopy types at runtime. The single-host
+synthetic evaluation cannot support an across-the-board performance
+ranking.</p>
+<p>The presheaf and Lean models permit partially supplied static worlds.
+The Rust API currently requires every named static parameter at
+construction; captured subject data remain dynamic. It does not yet
+expose incremental parameter specialization or an
+optimization-certificate checker.</p>
+<p>The most direct next engineering steps are lowering string
+comparisons and capture access into native code, representing repeat
+alternatives without cloning all captures, integrating a linear-time
+backend for a certified regular fragment, and comparing internal
+predicates against PCRE2 callouts. Each must preserve both capture
+observations and branch priority. A richer lambda language would need a
+renewed normalization and cost argument; adding arbitrary Python or Ruby
+evaluation would invalidate the present totality claim.</p>
+<h2 id="reproducibility-and-authorship">11. Reproducibility and
+authorship</h2>
+<p>The accompanying version 0.1.0 bundle contains Rust source, a locked
+dependency graph, CLI examples, corpus generators, per-sample matching
+and compilation measurements, stress results, environment metadata, the
+Lean source and successful checker output, and the paper in Markdown,
+LaTeX, HTML, and PDF. Run <code>cargo test --release --locked</code>,
+build the release binaries, and execute
+<code>python3 scripts/run_benchmarks.py</code>. PCRE2 development
+libraries are required. The Lean proof checks with
+<code>lean formal/Specialization.lean</code>. An optional compatibility
+shim is documented for hosts that expose <code>/proc/self/exe</code> but
+not <code>/proc/&lt;pid&gt;/exe</code>; it changes executable-path
+discovery only and does not modify Lean’s kernel.</p>
+<p><strong>Authorship and automation disclosure.</strong> Submitted by
+an anonymous responsible author. An AI assistant assisted with
+conceptual formulation, code generation, proofs, testing, benchmarking,
+and manuscript preparation. Benchmark numbers are outputs of the
+included executions, not model estimates. The anonymous author
+authorized submission and accepted the journal’s interaction terms. No
+human peer review, editorial acceptance, independent replication, or
+end-to-end formal verification is claimed.</p>
+<h2 id="references">References</h2>
+<ol type="1">
+<li>N. D. Jones, C. K. Gomard, and P. Sestoft. <em>Partial Evaluation
+and Automatic Program Generation</em>. Prentice Hall, 1993.
+Author-maintained text and materials: <a
+href="https://raspi.itu.dk/people/sestoft/pebook/pebook.html"
+class="uri">https://raspi.itu.dk/people/sestoft/pebook/pebook.html</a>.</li>
+<li>M. L. Schmid. <em>Regular Expressions with Backreferences:
+Polynomial-Time Matching Techniques</em>. arXiv:1903.05896, revised
+2024. <a href="https://arxiv.org/abs/1903.05896"
+class="uri">https://arxiv.org/abs/1903.05896</a>.</li>
+<li>PCRE2 project. <em>PCRE2 just-in-time compiler support</em>. <a
+href="https://www.pcre.org/current/doc/html/pcre2jit.html"
+class="uri">https://www.pcre.org/current/doc/html/pcre2jit.html</a>.</li>
+<li>PCRE2 project. <em>PCRE2 callout specification</em>. <a
+href="https://www.pcre.org/current/doc/html/pcre2callout.html"
+class="uri">https://www.pcre.org/current/doc/html/pcre2callout.html</a>.</li>
+<li>Rust regex maintainers. <em>regex crate documentation</em>. <a
+href="https://docs.rs/regex/1.12.2/regex/"
+class="uri">https://docs.rs/regex/1.12.2/regex/</a>.</li>
+<li>J. Lurie. <em>Higher Topos Theory</em>. Annals of Mathematics
+Studies 170, Princeton University Press, 2009. Author’s text: <a
+href="https://www.math.ias.edu/~lurie/papers/HTT.pdf"
+class="uri">https://www.math.ias.edu/~lurie/papers/HTT.pdf</a>.</li>
+<li>R. Haugseng. <em>Iterated Spans and Classical Topological Field
+Theories</em>. Mathematische Zeitschrift 289 (2018), 1427-1488. <a
+href="https://arxiv.org/abs/1409.0837"
+class="uri">https://arxiv.org/abs/1409.0837</a>.</li>
+<li>Bytecode Alliance. <em>Cranelift JIT demonstration and
+implementation documentation</em>. <a
+href="https://github.com/bytecodealliance/cranelift-jit-demo"
+class="uri">https://github.com/bytecodealliance/cranelift-jit-demo</a>;
+<a href="https://docs.rs/cranelift-jit/0.125.3/cranelift_jit/"
+class="uri">https://docs.rs/cranelift-jit/0.125.3/cranelift_jit/</a>.</li>
+<li>Python Software Foundation. <em>re: Regular expression
+operations</em>. <a href="https://docs.python.org/3/library/re.html"
+class="uri">https://docs.python.org/3/library/re.html</a>.</li>
+<li>R. Cox. <em>Regular Expression Matching Can Be Simple and Fast</em>.
+2007. <a href="https://swtch.com/~rsc/regexp/regexp1.html"
+class="uri">https://swtch.com/~rsc/regexp/regexp1.html</a>.</li>
+<li>D. D. Freydenberger and M. L. Schmid. <em>Deterministic Regular
+Expressions with Back-References</em>. Journal of Computer and System
+Sciences 105 (2019), 1-39. <a href="https://arxiv.org/abs/1802.01508"
+class="uri">https://arxiv.org/abs/1802.01508</a>.</li>
+<li>J. Avigad, L. de Moura, S. Kong, and S. Ullrich. <em>Theorem Proving
+in Lean 4</em>. <a
+href="https://lean-lang.org/theorem_proving_in_lean4/"
+class="uri">https://lean-lang.org/theorem_proving_in_lean4/</a>. The
+checked version here is pinned separately to Lean 4.19.0.</li>
+</ol>
+<p>All reference URLs were accessed during preparation on October 24,
+2026 (America/Los_Angeles). The cited current documentation may describe
+newer releases; the benchmark versions are recorded separately.</p>
+</body>
+</html>

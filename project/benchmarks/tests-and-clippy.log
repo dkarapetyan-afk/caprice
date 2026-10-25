@@ -1,0 +1,65 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 2.59s
+     Running unittests src/lib.rs (caprice-perf/target/release/deps/caprice-39659514ed6d4878)
+
+running 1 test
+lowered_expression_comparisons=51200
+test fast_expr::tests::lowered_expressions_preserve_strict_errors_and_byte_values ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/allocations.rs (caprice-perf/target/release/deps/allocations-13e3cc15524943d4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/benchmark.rs (caprice-perf/target/release/deps/benchmark-26ae00efbe38101f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (caprice-perf/target/release/deps/caprice-69fa5dab7c8f9ed7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/performance_semantics.rs (caprice-perf/target/release/deps/performance_semantics-94f0def790684d40)
+
+running 4 tests
+test necessary_literal_rejects_but_does_not_decide_surviving_searches ... ok
+test native_and_vm_have_identical_residual_budgets ... ok
+native_boundary_cases=11056
+test native_bytes_lengths_and_class_tables ... ok
+range_trail_reuse_comparisons=54684
+test ranges_capture_trails_and_scratch_reuse ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/semantics.rs (caprice-perf/target/release/deps/semantics-d67d3091da988bc8)
+
+running 9 tests
+test syntax_and_type_rejections ... ok
+test bounded_repeat_does_not_enumerate_duplicate_counts ... ok
+test parameters_are_literal_and_specialization_agrees ... ok
+test budget_is_a_separate_outcome ... ok
+test missing_is_not_empty_and_application_is_strict ... ok
+test typed_lambdas_and_interpolation ... ok
+test captures_backrefs_and_rollback ... ok
+exhaustive_extended_cases=15624
+test exhaustive_dynamic_specialization_and_jit ... ok
+exhaustive_shared_cases=20767
+test exhaustive_differential_capture_semantics ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests caprice
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Checking caprice v0.2.0 (/workspace/scratch/e1e96430873e/caprice-perf)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.38s
+

@@ -1,0 +1,13 @@
+{
+  "clock": "std::time::Instant",
+  "compile_samples": 7,
+  "cranelift": "0.125.3",
+  "pcre2": "10.49 2026-09-28",
+  "pid": 7,
+  "profile": "release",
+  "regex": "1.12.2",
+  "samples": 9,
+  "seed_final": 17412386771273942788,
+  "semantics": "full-byte-match; ASCII transforms; host predicates only on unique captures",
+  "target_sample_ms": 20
+}

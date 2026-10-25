@@ -1,0 +1,43 @@
+   Compiling caprice v0.1.0 (/workspace/scratch/e1e96430873e/caprice)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2.08s
+     Running unittests src/lib.rs (target/release/deps/caprice-4860aaea414280f4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/benchmark.rs (target/release/deps/benchmark-2d55f0fe09707263)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/deps/caprice-fe9a3fbb6a58070c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/semantics.rs (target/release/deps/semantics-2e598ab76d0ebba6)
+
+running 9 tests
+test syntax_and_type_rejections ... ok
+test parameters_are_literal_and_specialization_agrees ... ok
+test budget_is_a_separate_outcome ... ok
+test bounded_repeat_does_not_enumerate_duplicate_counts ... ok
+test missing_is_not_empty_and_application_is_strict ... ok
+test captures_backrefs_and_rollback ... ok
+test typed_lambdas_and_interpolation ... ok
+exhaustive_extended_cases=15624
+test exhaustive_dynamic_specialization_and_jit ... ok
+exhaustive_shared_cases=20767
+test exhaustive_differential_capture_semantics ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests caprice
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,0 +1,15 @@
+{
+  "files": [
+    {
+      "filename": "caprice-manuscript.pdf",
+      "size_bytes": 290758,
+      "sha256": "26a08e085738c3362ba8b7f6d5e57253f52c8b782ab1594268122749b43ccffd"
+    },
+    {
+      "filename": "caprice-v0.1.0.zip",
+      "size_bytes": 590890,
+      "sha256": "df43c8aa2780a8d7e44a5e1ce29842d094331764aeaa7a18804cf66304c3edf3"
+    }
+  ],
+  "bundle_entries": 63
+}

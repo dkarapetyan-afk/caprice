@@ -1,0 +1,78 @@
+{
+  "validated_at_utc": "2026-10-25T07:16:32.240719+00:00",
+  "source": "clean ZIP extraction, no preexisting target, empty Cargo registry/cache",
+  "cargo_network": "disabled with --frozen; vendored crate source",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "pcre2": "10.49",
+  "cached_crate_archives": 0,
+  "checks": [
+    {
+      "check": "rust-tests",
+      "command": [
+        "bash",
+        "scripts/cargo_local.sh",
+        "test",
+        "--release",
+        "--frozen",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    },
+    {
+      "check": "comparison-build",
+      "command": [
+        "bash",
+        "scripts/cargo_local.sh",
+        "build",
+        "--release",
+        "--frozen",
+        "--example",
+        "compare"
+      ],
+      "exit_code": 0
+    },
+    {
+      "check": "clippy",
+      "command": [
+        "bash",
+        "scripts/cargo_local.sh",
+        "clippy",
+        "--release",
+        "--frozen",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0
+    },
+    {
+      "check": "cli-match",
+      "command": [
+        "bash",
+        "scripts/cargo_local.sh",
+        "run",
+        "--release",
+        "--frozen",
+        "--bin",
+        "caprice",
+        "--",
+        "jit",
+        "(?<x>[a-z]+)-\\k<x>",
+        "abc-abc"
+      ],
+      "exit_code": 0
+    },
+    {
+      "check": "Specialization",
+      "exit_code": 0
+    },
+    {
+      "check": "AffineLengths",
+      "exit_code": 0
+    }
+  ],
+  "lean_toolchain": "4.19.0; host proc-path compatibility shim"
+}

@@ -1,0 +1,12 @@
+{
+  "engine": "0.3.0",
+  "rust_measured": "1.99.1 (58cf8f9c3 2026-10-13)",
+  "lean_proof_kernel": "4.19.0",
+  "cranelift": "0.125.3",
+  "pcre2_comparison": "10.49",
+  "rust_dependency_directories": 76,
+  "primary_platform": "Linux x86-64; Windows via WSL2",
+  "toolchains_bundled": false,
+  "rust_sources_vendored": true,
+  "pcre2_source_bundled": true
+}

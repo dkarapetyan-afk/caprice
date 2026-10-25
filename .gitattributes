@@ -1,0 +1,7 @@
+* text=auto eol=lf
+project/vendor/** -text
+*.pdf -text
+*.zip -text
+*.bz2 -text
+*.png -text
+*.csv -text

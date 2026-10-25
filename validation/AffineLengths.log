@@ -1,0 +1,5 @@
+'Caprice.Lengths.affine_unique' depends on axioms: [propext]
+'Caprice.Lengths.affine_recover' depends on axioms: [propext]
+'Caprice.Lengths.affine_divisibility' depends on axioms: [propext]
+'Caprice.Lengths.reject_bad_remainder' depends on axioms: [propext]
+'Caprice.Lengths.reject_upper_bound' depends on axioms: [propext]

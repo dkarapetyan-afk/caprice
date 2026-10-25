@@ -1,0 +1,2 @@
+    Checking caprice v0.1.0 (/workspace/scratch/e1e96430873e/caprice)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s

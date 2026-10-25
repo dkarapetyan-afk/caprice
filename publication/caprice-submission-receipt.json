@@ -1,0 +1,51 @@
+{
+  "title": "Caprice: Higher-Categorical Semantics of Capture-Aware Partial Evaluation and JIT Matching",
+  "author": "Anonymous author",
+  "terms_version": "2026-10-11",
+  "submitted_at_utc": "2026-10-25T04:50:10.166366+00:00",
+  "http_status": 200,
+  "response_url": "https://higher-categorical-semantics.pages.dev/submit?receipt=1b0789bf99404b3d82df436500f37a94",
+  "files": [
+    {
+      "filename": "caprice-manuscript.pdf",
+      "size_bytes": 290758,
+      "sha256": "26a08e085738c3362ba8b7f6d5e57253f52c8b782ab1594268122749b43ccffd"
+    },
+    {
+      "filename": "caprice-v0.1.0.zip",
+      "size_bytes": 590890,
+      "sha256": "df43c8aa2780a8d7e44a5e1ce29842d094331764aeaa7a18804cf66304c3edf3"
+    }
+  ],
+  "body_sha256": "22d2c8e45b50c59d9f12dca596cdc886523fe1980d80614f921278bec98dd9d0",
+  "cookies_persisted": false,
+  "tracking_id": "1b0789bf99404b3d82df436500f37a94",
+  "status_url": "https://higher-categorical-semantics.pages.dev/api/v1/submissions/1b0789bf99404b3d82df436500f37a94",
+  "journal_status": {
+    "ok": true,
+    "tracking_id": "1b0789bf99404b3d82df436500f37a94",
+    "status": "pending",
+    "reviewed_at": null,
+    "url": null
+  },
+  "verified_artifacts": [],
+  "all_artifacts_verified": false,
+  "workspace_artifact_links": [
+    "https://higher-categorical-semantics.pages.dev/artifacts/359acf675d4c342667b1cbefe1942b07",
+    "https://higher-categorical-semantics.pages.dev/artifacts/359acf675d4c342667b1cbefe1942b07/download",
+    "https://higher-categorical-semantics.pages.dev/artifacts/ea4d78ac8553a3a5e3d03dbce7a4c2fa",
+    "https://higher-categorical-semantics.pages.dev/artifacts/ea4d78ac8553a3a5e3d03dbce7a4c2fa/download"
+  ],
+  "artifact_reference_checks": [
+    {
+      "url": "https://higher-categorical-semantics.pages.dev/artifacts/359acf675d4c342667b1cbefe1942b07",
+      "status": 404
+    },
+    {
+      "url": "https://higher-categorical-semantics.pages.dev/artifacts/ea4d78ac8553a3a5e3d03dbce7a4c2fa",
+      "status": 404
+    }
+  ],
+  "attachment_count_confirmed_in_workspace": 2,
+  "verification_note": "Local file hashes and every archive entry were verified. Both attachment references were listed in the authenticated submission workspace. Remote download verification was not completed: the temporary session was not persisted, and unauthenticated requests correctly returned 404 while the submission is pending."
+}
