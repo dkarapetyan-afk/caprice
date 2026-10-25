@@ -73,6 +73,7 @@ cp -a "$pcre_lib"/libpcre2-8.so* "$work/$name/lib/"
 rm -f "$work/$name/lib"/*.la
 tar -xjf "$tarball" -O pcre2-10.49/LICENCE.md >"$work/$name/share/pcre2/LICENCE.md"
 [[ -s "$work/$name/share/pcre2/LICENCE.md" ]]
+cp -a "$root/LICENSE-MIT" "$root/LICENSE-APACHE" "$work/$name/"
 
 for bin in "$work/$name/bin"/*; do
     patchelf --set-rpath '$ORIGIN/../lib' "$bin"
@@ -91,6 +92,8 @@ lib/ holds PCRE2 10.49, used by the comparison backends. The executables
 load it through an RPATH of \$ORIGIN/../lib. share/pcre2/LICENCE.md is the
 upstream PCRE2 license. Rust dependency notices stay in project/vendor of
 the source tree.
+
+Caprice itself is available under either LICENSE-MIT or LICENSE-APACHE.
 EOF
 
 (

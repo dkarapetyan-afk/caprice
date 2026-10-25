@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "files": {
     "Cargo.lock": "91e183ba7404541ac5e1169f943e9803fccf390c8dcfb132ded04c76dee64a54",
-    "Cargo.toml": "3085f0624a3ae99f8557cb352ab93cf4c707f4e49706732b63de1ad31564027b",
+    "Cargo.toml": "0683af1088c4ffd910d36b4030463bb5a38a3e217c05483baad30851612811cc",
     "README.md": "fdfc17018f6d0dbc8fa719aa61d2198f8f05b828b1ec953ab5ef7c40d297fd9b",
     "caprice-performance-note.pdf": "386cd76ad0b7e6e020d68c409c080886727c20ac441039aff2e439baf4bf1a1f",
     "performance-changes.patch": "3e9a6e6cc181ec940e72e327ddf7d8f2319e881504d14376a51161687e803648",

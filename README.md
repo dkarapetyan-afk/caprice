@@ -59,3 +59,15 @@ update, refresh the vendor tree and commit it:
 ```sh
 bash project/scripts/refresh_vendor.sh
 ```
+
+## License
+
+Caprice is dual-licensed under either of
+
+* the Apache License, Version 2.0, in [LICENSE-APACHE](LICENSE-APACHE)
+* the MIT license in [LICENSE-MIT](LICENSE-MIT)
+
+at your option.
+
+`project/vendor/` and `third_party/pcre2/` keep the upstream notices shipped
+with those sources. This dual license does not replace those notices.
